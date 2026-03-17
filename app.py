@@ -9,24 +9,33 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from prophet import Prophet
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
 import re
 import warnings
+
+# --- Conditional Deep Learning Import ---
+try:
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, LSTM
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
 
 # Ignore statistical convergence warnings in the UI
 warnings.filterwarnings("ignore")
 
 # --- UI SETUP ---
-st.set_page_config(page_title="Ultimate Stock Predictor", layout="wide")
-st.title("📈 The Ultimate Multi-Model Stock Predictor")
-st.markdown("Compare Classic Statistical models, Machine Learning, and Macroeconomic SARIMAX.")
+st.set_page_config(page_title="Ultimate Market Predictor", layout="wide")
+st.title("📈 The Ultimate Multi-Model Market Predictor")
+st.markdown("Forecast Stocks, Currencies, and Commodities using Stats, ML, and Deep Learning.")
 
 # --- SIDEBAR (Global Settings) ---
 st.sidebar.header("Global Data Configuration")
 
-raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X)", "AAPL").upper()
+raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X, GC=F)", "AAPL").upper()
 ticker = re.split(r'[,\s]+', raw_ticker_input)[0].strip()
 
-start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*2))
+start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*3))
 end_date = st.sidebar.date_input("End Date", date.today())
 
 days_to_predict = st.sidebar.slider("Days to Forecast", 1, 90, 14)
@@ -47,7 +56,7 @@ def load_data(ticker_symbol, start, end):
 if start_date >= end_date:
     st.sidebar.error("Error: Start Date must be before End Date.")
 else:
-    with st.spinner('Fetching target market data...'):
+    with st.spinner('Fetching market data...'):
         df = load_data(ticker, start_date, end_date)
     
     if df.empty:
@@ -55,19 +64,25 @@ else:
     else:
         fig_raw = go.Figure()
         fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="Historical Close"))
-        fig_raw.layout.update(title_text=f'Historical Time Series Data for {ticker}', xaxis_rangeslider_visible=True)
+        fig_raw.layout.update(title_text=f'Historical Price Data for {ticker}', xaxis_rangeslider_visible=True)
         st.plotly_chart(fig_raw, use_container_width=True)
 
         df_train_values = df['Close'].dropna().values
 
         # --- TABS SETUP ---
-        tab1, tab2, tab3 = st.tabs(["📊 Classic Statistical", "🤖 ML & Prophet", "🌍 Macro SARIMAX"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Statistical", 
+            "🤖 ML & Prophet", 
+            "🌍 Macro SARIMAX", 
+            "🧠 Deep Learning (LSTM)",
+            "📖 Asset Class Guide"
+        ])
 
         # ==========================================
         # TAB 1: STATISTICAL MODELS
         # ==========================================
         with tab1:
-            st.subheader("Statistical Forecasting (Univariate)")
+            st.subheader("Classic Statistical Forecasting")
             model_type_stat = st.selectbox("Choose a Statistical Model", 
                                            ["ARIMA", "SARIMA (Seasonal)", "Exponential Smoothing (ETS)"])
             
@@ -92,37 +107,38 @@ else:
                 with ecol2: seasonal = st.selectbox("Seasonal Type", ["add", "mul", None], index=0)
                 with ecol3: seasonal_periods = st.slider("Seasonal Periods", 2, 30, 5)
 
-            with st.spinner(f"Fitting {model_type_stat} model..."):
-                try:
-                    if model_type_stat == "ARIMA":
-                        model = ARIMA(df_train_values, order=(p, d, q))
-                        fitted_model = model.fit()
-                        forecast = fitted_model.forecast(steps=days_to_predict)
-                        summary_text = fitted_model.summary().as_text()
-                    elif model_type_stat == "SARIMA (Seasonal)":
-                        model = SARIMAX(df_train_values, order=(p, d, q), seasonal_order=(P, D, Q, s))
-                        fitted_model = model.fit(disp=False)
-                        forecast = fitted_model.forecast(steps=days_to_predict)
-                        summary_text = fitted_model.summary().as_text()
-                    elif model_type_stat == "Exponential Smoothing (ETS)":
-                        model = ExponentialSmoothing(df_train_values, trend=trend, seasonal=seasonal, seasonal_periods=seasonal_periods)
-                        fitted_model = model.fit()
-                        forecast = fitted_model.forecast(days_to_predict)
-                        summary_text = "Exponential smoothing relies on visual fit."
+            if st.button(f"Run {model_type_stat} Model"):
+                with st.spinner(f"Fitting {model_type_stat} model..."):
+                    try:
+                        if model_type_stat == "ARIMA":
+                            model = ARIMA(df_train_values, order=(p, d, q))
+                            fitted_model = model.fit()
+                            forecast = fitted_model.forecast(steps=days_to_predict)
+                            summary_text = fitted_model.summary().as_text()
+                        elif model_type_stat == "SARIMA (Seasonal)":
+                            model = SARIMAX(df_train_values, order=(p, d, q), seasonal_order=(P, D, Q, s))
+                            fitted_model = model.fit(disp=False)
+                            forecast = fitted_model.forecast(steps=days_to_predict)
+                            summary_text = fitted_model.summary().as_text()
+                        elif model_type_stat == "Exponential Smoothing (ETS)":
+                            model = ExponentialSmoothing(df_train_values, trend=trend, seasonal=seasonal, seasonal_periods=seasonal_periods)
+                            fitted_model = model.fit()
+                            forecast = fitted_model.forecast(days_to_predict)
+                            summary_text = "Note: Exponential smoothing calculates a visual fit and does not generate standard P-value summary tables."
 
-                    last_date = df['Date'].iloc[-1]
-                    future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
-                    
-                    fig_stat = go.Figure()
-                    context_df = df.tail(100)
-                    fig_stat.add_trace(go.Scatter(x=context_df['Date'], y=context_df['Close'], name="Recent Actual", line=dict(color='blue')))
-                    fig_stat.add_trace(go.Scatter(x=future_dates, y=forecast, name=f"{model_type_stat} Forecast", line=dict(color='red', width=3, dash='dot')))
-                    fig_stat.layout.update(title_text=f'{days_to_predict}-Day Forecast ({model_type_stat})')
-                    st.plotly_chart(fig_stat, use_container_width=True)
-                    with st.expander("View Model Summary"):
-                        st.text(summary_text)
-                except Exception as e:
-                    st.error("Model failed to converge. Try adjusting parameters.")
+                        last_date = df['Date'].iloc[-1]
+                        future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
+                        
+                        fig_stat = go.Figure()
+                        fig_stat.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Recent Actual", line=dict(color='blue')))
+                        fig_stat.add_trace(go.Scatter(x=future_dates, y=forecast, name=f"{model_type_stat} Forecast", line=dict(color='red', width=3, dash='dot')))
+                        fig_stat.layout.update(title_text=f'{days_to_predict}-Day Forecast ({model_type_stat})')
+                        st.plotly_chart(fig_stat, use_container_width=True)
+                        
+                        with st.expander("View Statistical Model Summary"):
+                            st.text(summary_text)
+                    except Exception as e:
+                        st.error("Model failed to converge. Try adjusting parameters.")
 
         # ==========================================
         # TAB 2: MACHINE LEARNING & PROPHET
@@ -131,60 +147,63 @@ else:
             st.subheader("Modern Algorithmic Forecasting")
             model_type_ml = st.selectbox("Choose Algorithmic Model", ["Facebook Prophet", "Machine Learning (Random Forest)"])
             
-            with st.spinner(f"Running {model_type_ml}..."):
-                if model_type_ml == "Facebook Prophet":
-                    df_prophet = df[['Date', 'Close']].rename(columns={"Date": "ds", "Close": "y"})
-                    m = Prophet(daily_seasonality=True)
-                    m.fit(df_prophet)
-                    future = m.make_future_dataframe(periods=days_to_predict)
-                    prophet_forecast = m.predict(future)
-                    
-                    fig_proph = go.Figure()
-                    fig_proph.add_trace(go.Scatter(x=df_prophet['ds'].tail(100), y=df_prophet['y'].tail(100), name="Actual", line=dict(color='blue')))
-                    future_only = prophet_forecast.tail(days_to_predict)
-                    fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat'], name="Predicted", line=dict(color='orange')))
-                    fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_upper'], fill=None, mode='lines', line_color='rgba(0,0,0,0)', showlegend=False))
-                    fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(0,0,0,0)', fillcolor='rgba(255, 165, 0, 0.2)'))
-                    fig_proph.layout.update(title_text=f'Prophet Forecast for {ticker}')
-                    st.plotly_chart(fig_proph, use_container_width=True)
+            if st.button(f"Run {model_type_ml} Model"):
+                with st.spinner(f"Running {model_type_ml}..."):
+                    if model_type_ml == "Facebook Prophet":
+                        df_prophet = df[['Date', 'Close']].rename(columns={"Date": "ds", "Close": "y"})
+                        m = Prophet(daily_seasonality=True)
+                        m.fit(df_prophet)
+                        future = m.make_future_dataframe(periods=days_to_predict)
+                        prophet_forecast = m.predict(future)
+                        
+                        fig_proph = go.Figure()
+                        fig_proph.add_trace(go.Scatter(x=df_prophet['ds'].tail(150), y=df_prophet['y'].tail(150), name="Actual", line=dict(color='blue')))
+                        future_only = prophet_forecast.tail(days_to_predict)
+                        fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat'], name="Predicted", line=dict(color='orange', width=3, dash='dot')))
+                        fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_upper'], fill=None, mode='lines', line_color='rgba(0,0,0,0)', showlegend=False))
+                        fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(0,0,0,0)', fillcolor='rgba(255, 165, 0, 0.2)'))
+                        fig_proph.layout.update(title_text=f'Prophet Forecast for {ticker}')
+                        st.plotly_chart(fig_proph, use_container_width=True)
 
-                elif model_type_ml == "Machine Learning (Random Forest)":
-                    df_rf = df[['Date', 'Close']].copy()
-                    df_rf.dropna(subset=['Close'], inplace=True)
-                    df_rf['Day'] = df_rf['Date'].dt.day
-                    df_rf['Month'] = df_rf['Date'].dt.month
-                    df_rf['Year'] = df_rf['Date'].dt.year
-                    df_rf['DayOfWeek'] = df_rf['Date'].dt.dayofweek
-                    
-                    X = df_rf[['Day', 'Month', 'Year', 'DayOfWeek']]
-                    y = df_rf['Close']
-                    
-                    rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-                    rf_model.fit(X, y)
-                    
-                    last_date = df['Date'].iloc[-1]
-                    future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
-                    future_df = pd.DataFrame({'Date': future_dates})
-                    future_df['Day'] = future_df['Date'].dt.day
-                    future_df['Month'] = future_df['Date'].dt.month
-                    future_df['Year'] = future_df['Date'].dt.year
-                    future_df['DayOfWeek'] = future_df['Date'].dt.dayofweek
-                    
-                    rf_forecast = rf_model.predict(future_df[['Day', 'Month', 'Year', 'DayOfWeek']])
-                    
-                    fig_rf = go.Figure()
-                    context_df = df.tail(100)
-                    fig_rf.add_trace(go.Scatter(x=context_df['Date'], y=context_df['Close'], name="Recent Actual", line=dict(color='blue')))
-                    fig_rf.add_trace(go.Scatter(x=future_dates, y=rf_forecast, name="Predicted", line=dict(color='green', dash='dot')))
-                    fig_rf.layout.update(title_text=f'Random Forest Forecast for {ticker}')
-                    st.plotly_chart(fig_rf, use_container_width=True)
+                    elif model_type_ml == "Machine Learning (Random Forest)":
+                        df_rf = df[['Date', 'Close']].copy()
+                        df_rf.dropna(subset=['Close'], inplace=True)
+                        df_rf['Day'] = df_rf['Date'].dt.day
+                        df_rf['Month'] = df_rf['Date'].dt.month
+                        df_rf['Year'] = df_rf['Date'].dt.year
+                        df_rf['DayOfWeek'] = df_rf['Date'].dt.dayofweek
+                        
+                        X = df_rf[['Day', 'Month', 'Year', 'DayOfWeek']]
+                        y = df_rf['Close']
+                        
+                        rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+                        rf_model.fit(X, y)
+                        
+                        last_date = df['Date'].iloc[-1]
+                        future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
+                        future_df = pd.DataFrame({'Date': future_dates})
+                        future_df['Day'] = future_df['Date'].dt.day
+                        future_df['Month'] = future_df['Date'].dt.month
+                        future_df['Year'] = future_df['Date'].dt.year
+                        future_df['DayOfWeek'] = future_df['Date'].dt.dayofweek
+                        
+                        rf_forecast = rf_model.predict(future_df[['Day', 'Month', 'Year', 'DayOfWeek']])
+                        
+                        fig_rf = go.Figure()
+                        fig_rf.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Recent Actual", line=dict(color='blue')))
+                        fig_rf.add_trace(go.Scatter(x=future_dates, y=rf_forecast, name="Predicted", line=dict(color='green', width=3, dash='dot')))
+                        fig_rf.layout.update(title_text=f'Random Forest Forecast for {ticker}')
+                        st.plotly_chart(fig_rf, use_container_width=True)
+                        
+                with st.expander("Why is there no Model Summary here?"):
+                    st.info("Unlike ARIMA or SARIMA, Machine Learning algorithms (like Random Forest) and Prophet are not traditional statistical equations. They do not calculate p-values, z-scores, or standard errors for individual variables. Therefore, there is no statistical summary table to display.")
 
         # ==========================================
         # TAB 3: MACROECONOMIC SARIMAX
         # ==========================================
         with tab3:
             st.subheader("Multivariate SARIMAX (with Exogenous Variables)")
-            st.markdown("This model predicts your target asset while mathematically factoring in the live movements of a macroeconomic indicator.")
+            st.markdown("Predict your target asset by mathematically factoring in the live movements of a macroeconomic indicator.")
             
             macro_dict = {
                 "10-Year US Treasury Yield (^TNX)": "^TNX",
@@ -200,51 +219,135 @@ else:
             with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d")
             with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q")
 
-            with st.spinner(f"Fetching {macro_ticker} data and aligning dates..."):
-                macro_df = load_data(macro_ticker, start_date, end_date)
-                
-            if macro_df.empty:
-                st.error(f"Could not fetch data for {macro_ticker}.")
+            if st.button("Run Macro SARIMAX Model"):
+                with st.spinner(f"Fetching {macro_ticker} data and running complex math..."):
+                    macro_df = load_data(macro_ticker, start_date, end_date)
+                    
+                    if macro_df.empty:
+                        st.error(f"Could not fetch data for {macro_ticker}.")
+                    else:
+                        merged_df = pd.merge(df[['Date', 'Close']], macro_df[['Date', 'Close']], on='Date', suffixes=('_Target', '_Macro'))
+                        merged_df.dropna(inplace=True)
+
+                        if merged_df.empty:
+                            st.error("Data alignment failed. The target and macro indicator do not share enough trading days.")
+                        else:
+                            endog = merged_df['Close_Target'].values
+                            exog = merged_df['Close_Macro'].values
+
+                            try:
+                                macro_model = SARIMAX(endog, exog=exog, order=(mp, md, mq))
+                                macro_fitted = macro_model.fit(disp=False)
+                                
+                                future_exog = np.repeat(exog[-1], days_to_predict)
+                                macro_forecast = macro_fitted.forecast(steps=days_to_predict, exog=future_exog)
+
+                                last_date = merged_df['Date'].iloc[-1]
+                                future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
+
+                                fig_macro = go.Figure()
+                                fig_macro.add_trace(go.Scatter(x=merged_df['Date'].tail(150), y=merged_df['Close_Target'].tail(150), name="Target Actual", line=dict(color='blue')))
+                                fig_macro.add_trace(go.Scatter(x=future_dates, y=macro_forecast, name="Macro SARIMAX Forecast", line=dict(color='purple', width=3, dash='dot')))
+                                fig_macro.layout.update(title_text=f'{days_to_predict}-Day Forecast using {macro_ticker} as Exog')
+                                st.plotly_chart(fig_macro, use_container_width=True)
+
+                                with st.expander("View Macro SARIMAX Summary"):
+                                    st.text(macro_fitted.summary().as_text())
+                                    
+                            except Exception as e:
+                                st.error("SARIMAX failed to converge. Try adjusting the sliders.")
+
+        # ==========================================
+        # TAB 4: DEEP LEARNING (LSTM)
+        # ==========================================
+        with tab4:
+            st.subheader("🧠 Deep Learning: Long Short-Term Memory (LSTM)")
+            st.markdown("LSTMs are powerful neural networks specifically designed to recognize complex patterns in sequential time-series data.")
+            
+            if not TF_AVAILABLE:
+                st.error("⚠️ TensorFlow is not installed. Please run `pip install tensorflow` in your terminal to use the LSTM model.")
             else:
-                # Merge target and macro data on Date to ensure rows match exactly
-                merged_df = pd.merge(df[['Date', 'Close']], macro_df[['Date', 'Close']], on='Date', suffixes=('_Target', '_Macro'))
-                merged_df.dropna(inplace=True)
-
-                if merged_df.empty:
-                    st.error("Data alignment failed. The target and macro indicator do not share enough trading days.")
-                else:
-                    endog = merged_df['Close_Target'].values
-                    exog = merged_df['Close_Macro'].values
-
-                    with st.spinner("Fitting SARIMAX with Exogenous Data..."):
+                look_back = st.slider("Look-back Window (Days)", 10, 100, 60, help="How many past days the neural network looks at to predict the next single day.")
+                epochs = st.slider("Training Epochs", 5, 50, 10, help="More epochs = more learning, but it will take much longer to run.")
+                
+                if st.button("Train and Predict with LSTM"):
+                    with st.spinner(f"Training Neural Network for {epochs} epochs... This will take a moment."):
                         try:
-                            # Fit the true SARIMAX model
-                            macro_model = SARIMAX(endog, exog=exog, order=(mp, md, mq))
-                            macro_fitted = macro_model.fit(disp=False)
-                            
-                            # Create naive forecast for the exogenous variable (carry the last value forward)
-                            future_exog = np.repeat(exog[-1], days_to_predict)
-                            
-                            # Forecast the target
-                            macro_forecast = macro_fitted.forecast(steps=days_to_predict, exog=future_exog)
+                            # 1. Scale Data (Neural Networks require data to be between 0 and 1)
+                            dataset = df['Close'].dropna().values.reshape(-1, 1)
+                            scaler = MinMaxScaler(feature_range=(0, 1))
+                            scaled_data = scaler.fit_transform(dataset)
 
-                            last_date = merged_df['Date'].iloc[-1]
+                            # 2. Create Sequences
+                            X_train, y_train = [], []
+                            for i in range(look_back, len(scaled_data)):
+                                X_train.append(scaled_data[i-look_back:i, 0])
+                                y_train.append(scaled_data[i, 0])
+                            X_train, y_train = np.array(X_train), np.array(y_train)
+                            X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
+
+                            # 3. Build LSTM Model
+                            model = Sequential()
+                            model.add(LSTM(units=50, return_sequences=False, input_shape=(X_train.shape[1], 1)))
+                            model.add(Dense(units=1))
+                            
+                            model.compile(optimizer='adam', loss='mean_squared_error')
+                            
+                            # 4. Train Model
+                            model.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=0)
+
+                            # 5. Predict the Future (Iterative prediction)
+                            future_predictions = []
+                            current_batch = scaled_data[-look_back:].reshape((1, look_back, 1))
+                            
+                            for _ in range(days_to_predict):
+                                next_pred = model.predict(current_batch, verbose=0)
+                                future_predictions.append(next_pred[0, 0])
+                                # Shift the batch forward by 1 day, adding the new prediction to the end
+                                current_batch = np.append(current_batch[:, 1:, :], [next_pred], axis=1)
+
+                            # 6. Inverse transform predictions back to actual prices
+                            future_predictions = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
+
+                            last_date = df['Date'].iloc[-1]
                             future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
-
-                            fig_macro = go.Figure()
-                            context_df = merged_df.tail(100)
-                            fig_macro.add_trace(go.Scatter(x=context_df['Date'], y=context_df['Close_Target'], name="Recent Target Actual", line=dict(color='blue')))
-                            fig_macro.add_trace(go.Scatter(x=future_dates, y=macro_forecast, name="Macro SARIMAX Forecast", line=dict(color='purple', width=3, dash='dot')))
                             
-                            fig_macro.layout.update(
-                                title_text=f'{days_to_predict}-Day Forecast for {ticker} using {macro_ticker} as Exog',
-                                xaxis_title="Date",
-                                yaxis_title="Price"
-                            )
-                            st.plotly_chart(fig_macro, use_container_width=True)
-
-                            with st.expander("View Macro SARIMAX Summary"):
-                                st.text(macro_fitted.summary().as_text())
+                            fig_lstm = go.Figure()
+                            fig_lstm.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Recent Actual", line=dict(color='blue')))
+                            fig_lstm.add_trace(go.Scatter(x=future_dates, y=future_predictions.flatten(), name="LSTM Forecast", line=dict(color='magenta', width=3, dash='dot')))
+                            fig_lstm.layout.update(title_text=f'{days_to_predict}-Day LSTM Deep Learning Forecast')
+                            st.plotly_chart(fig_lstm, use_container_width=True)
+                            
+                            with st.expander("Why is there no Model Summary here?"):
+                                st.info("Neural Networks are 'Black Box' models. They calculate millions of internal weights to minimize loss, but they do not output a traditional statistical P-value or Z-score table.")
                                 
                         except Exception as e:
-                            st.error("SARIMAX failed to converge with these parameters. Try adjusting the sliders.")
+                            st.error(f"LSTM computation failed: {e}")
+
+        # ==========================================
+        # TAB 5: MARKET GUIDE
+        # ==========================================
+        with tab5:
+            st.subheader("📖 Guide to Asset Classes & Tickers")
+            st.markdown("Different assets behave completely differently. Understanding *what* drives an asset helps you choose the right forecasting model.")
+            
+            st.markdown("### 🏢 Stocks & Equities")
+            st.markdown("""
+            * **What drives them:** Company earnings reports, CEO changes, product launches, and general stock market sentiment.
+            * **Best Models:** ARIMA for short-term momentum; Random Forest and Prophet for baseline trend identification. 
+            * **Example Tickers:** `AAPL` (Apple), `TSLA` (Tesla), `SPY` (S&P 500 Index)
+            """)
+
+            st.markdown("### 💱 Currencies (Forex)")
+            st.markdown("""
+            * **What drives them:** Global macroeconomics. Interest rate hikes by central banks (like the US Fed), inflation rates, and international trade balances. When trading a currency, you are betting on the strength of one country against another.
+            * **Best Models:** **Macro SARIMAX** (using interest rates as exogenous variables) and **LSTMs** (for finding complex, non-linear patterns in chaotic forex data).
+            * **Example Tickers (Must end in =X):** `EURUSD=X` (Euro/US Dollar), `JPY=X` (Yen/US Dollar)
+            """)
+
+            st.markdown("### 🛢️ Commodities & Precious Metals")
+            st.markdown("""
+            * **What drives them:** Physical supply/demand, geopolitical crises, and inverse correlations to the US Dollar. For example, Gold acts as a "safe haven"—when interest rates go down or stock markets crash, Gold generally goes up.
+            * **Best Models:** **Macro SARIMAX** is exceptional here. Try predicting Gold while feeding the model the US Treasury Yield as an outside factor.
+            * **Example Tickers:** `GC=F` (Gold Futures), `SI=F` (Silver Futures), `CL=F` (Crude Oil)
+            """)
