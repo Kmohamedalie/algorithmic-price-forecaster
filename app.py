@@ -22,7 +22,7 @@ st.markdown("Compare Classic Statistical models against Modern Algorithmic appro
 # --- SIDEBAR (Global Settings) ---
 st.sidebar.header("Global Data Configuration")
 
-raw_ticker_input = st.sidebar.text_input("Stock Ticker (e.g., AAPL) \n Currency Ticker (e.g.,EURUSD=X )", "AAPL").upper()
+raw_ticker_input = st.sidebar.text_input("Stock Ticker (e.g., AAPL) <br> Currency Ticker (e.g.,EURUSD=X )", "AAPL").upper()
 ticker = re.split(r'[,\s]+', raw_ticker_input)[0].strip()
 
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*2))
