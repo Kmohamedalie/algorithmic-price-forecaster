@@ -64,6 +64,11 @@ def forecast_random_forest(series: pd.Series, horizon: int, n_lags: int = 20) ->
     Build lag features from the price series, train a Random Forest Regressor,
     and iteratively predict `horizon` future trading days.
     """
+    if len(series) <= n_lags:
+        raise ValueError(
+            f"Insufficient data: Random Forest requires more than {n_lags} data points, "
+            f"but only {len(series)} were provided. Please extend the start date."
+        )
     scaler = MinMaxScaler()
     values = scaler.fit_transform(series.values.reshape(-1, 1)).flatten()
 
@@ -75,7 +80,7 @@ def forecast_random_forest(series: pd.Series, horizon: int, n_lags: int = 20) ->
         return np.array(X), np.array(y)
 
     X, y = make_features(values, n_lags)
-    model = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+    model = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=4)
     model.fit(X, y)
 
     # Iterative multi-step forecast
@@ -231,10 +236,16 @@ st.success(
 # Summary metrics
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Latest Close", f"${series.iloc[-1]:.2f}")
-col2.metric("52-Week High", f"${series[-252:].max():.2f}")
-col3.metric("52-Week Low", f"${series[-252:].min():.2f}")
-price_chg = (series.iloc[-1] - series.iloc[-2]) / series.iloc[-2] * 100
-col4.metric("1-Day Change", f"{price_chg:+.2f}%", delta_color="normal")
+# Label the high/low based on actual available data length
+_lookback = min(252, len(series))
+_period_label = "52-Week" if _lookback >= 252 else f"{_lookback}-Day"
+col2.metric(f"{_period_label} High", f"${series[-_lookback:].max():.2f}")
+col3.metric(f"{_period_label} Low", f"${series[-_lookback:].min():.2f}")
+if len(series) >= 2:
+    price_chg = (series.iloc[-1] - series.iloc[-2]) / series.iloc[-2] * 100
+    col4.metric("1-Day Change", f"{price_chg:+.2f}%", delta_color="normal")
+else:
+    col4.metric("1-Day Change", "N/A")
 
 st.markdown("---")
 
