@@ -237,10 +237,10 @@ st.success(
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Latest Close", f"${series.iloc[-1]:.2f}")
 # Label the high/low based on actual available data length
-_lookback = min(252, len(series))
-_period_label = "52-Week" if _lookback >= 252 else f"{_lookback}-Day"
-col2.metric(f"{_period_label} High", f"${series[-_lookback:].max():.2f}")
-col3.metric(f"{_period_label} Low", f"${series[-_lookback:].min():.2f}")
+lookback_days = min(252, len(series))
+period_label = "52-Week" if lookback_days >= 252 else f"{lookback_days}-Day"
+col2.metric(f"{period_label} High", f"${series[-lookback_days:].max():.2f}")
+col3.metric(f"{period_label} Low", f"${series[-lookback_days:].min():.2f}")
 if len(series) >= 2:
     price_chg = (series.iloc[-1] - series.iloc[-2]) / series.iloc[-2] * 100
     col4.metric("1-Day Change", f"{price_chg:+.2f}%", delta_color="normal")
