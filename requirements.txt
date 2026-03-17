@@ -3,7 +3,5 @@ yfinance
 pandas
 plotly
 statsmodels
-numpy
 prophet
 scikit-learn
-
