@@ -9,17 +9,8 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from prophet import Prophet
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import MinMaxScaler
 import re
 import warnings
-
-# --- Conditional Deep Learning Import ---
-try:
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, LSTM
-    TF_AVAILABLE = True
-except ImportError:
-    TF_AVAILABLE = False
 
 # Ignore statistical convergence warnings in the UI
 warnings.filterwarnings("ignore")
@@ -27,7 +18,7 @@ warnings.filterwarnings("ignore")
 # --- UI SETUP ---
 st.set_page_config(page_title="Ultimate Market Predictor", layout="wide")
 st.title("📈 The Ultimate Multi-Model Market Predictor")
-st.markdown("Forecast Stocks, Currencies, and Commodities using Stats, ML, and Deep Learning.")
+st.markdown("Forecast Stocks, Currencies, and Commodities using Stats and Machine Learning.")
 
 # --- SIDEBAR (Global Settings) ---
 st.sidebar.header("Global Data Configuration")
@@ -70,11 +61,10 @@ else:
         df_train_values = df['Close'].dropna().values
 
         # --- TABS SETUP ---
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4 = st.tabs([
             "📊 Statistical", 
             "🤖 ML & Prophet", 
             "🌍 Macro SARIMAX", 
-            "🧠 Deep Learning (LSTM)",
             "📖 Asset Class Guide"
         ])
 
@@ -258,76 +248,9 @@ else:
                                 st.error("SARIMAX failed to converge. Try adjusting the sliders.")
 
         # ==========================================
-        # TAB 4: DEEP LEARNING (LSTM)
+        # TAB 4: MARKET GUIDE
         # ==========================================
         with tab4:
-            st.subheader("🧠 Deep Learning: Long Short-Term Memory (LSTM)")
-            st.markdown("LSTMs are powerful neural networks specifically designed to recognize complex patterns in sequential time-series data.")
-            
-            if not TF_AVAILABLE:
-                st.error("⚠️ TensorFlow is not installed. Please run `pip install tensorflow` in your terminal to use the LSTM model.")
-            else:
-                look_back = st.slider("Look-back Window (Days)", 10, 100, 60, help="How many past days the neural network looks at to predict the next single day.")
-                epochs = st.slider("Training Epochs", 5, 50, 10, help="More epochs = more learning, but it will take much longer to run.")
-                
-                if st.button("Train and Predict with LSTM"):
-                    with st.spinner(f"Training Neural Network for {epochs} epochs... This will take a moment."):
-                        try:
-                            # 1. Scale Data (Neural Networks require data to be between 0 and 1)
-                            dataset = df['Close'].dropna().values.reshape(-1, 1)
-                            scaler = MinMaxScaler(feature_range=(0, 1))
-                            scaled_data = scaler.fit_transform(dataset)
-
-                            # 2. Create Sequences
-                            X_train, y_train = [], []
-                            for i in range(look_back, len(scaled_data)):
-                                X_train.append(scaled_data[i-look_back:i, 0])
-                                y_train.append(scaled_data[i, 0])
-                            X_train, y_train = np.array(X_train), np.array(y_train)
-                            X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
-
-                            # 3. Build LSTM Model
-                            model = Sequential()
-                            model.add(LSTM(units=50, return_sequences=False, input_shape=(X_train.shape[1], 1)))
-                            model.add(Dense(units=1))
-                            
-                            model.compile(optimizer='adam', loss='mean_squared_error')
-                            
-                            # 4. Train Model
-                            model.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=0)
-
-                            # 5. Predict the Future (Iterative prediction)
-                            future_predictions = []
-                            current_batch = scaled_data[-look_back:].reshape((1, look_back, 1))
-                            
-                            for _ in range(days_to_predict):
-                                next_pred = model.predict(current_batch, verbose=0)
-                                future_predictions.append(next_pred[0, 0])
-                                # Shift the batch forward by 1 day, adding the new prediction to the end
-                                current_batch = np.append(current_batch[:, 1:, :], [next_pred], axis=1)
-
-                            # 6. Inverse transform predictions back to actual prices
-                            future_predictions = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
-
-                            last_date = df['Date'].iloc[-1]
-                            future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
-                            
-                            fig_lstm = go.Figure()
-                            fig_lstm.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Recent Actual", line=dict(color='blue')))
-                            fig_lstm.add_trace(go.Scatter(x=future_dates, y=future_predictions.flatten(), name="LSTM Forecast", line=dict(color='magenta', width=3, dash='dot')))
-                            fig_lstm.layout.update(title_text=f'{days_to_predict}-Day LSTM Deep Learning Forecast')
-                            st.plotly_chart(fig_lstm, use_container_width=True)
-                            
-                            with st.expander("Why is there no Model Summary here?"):
-                                st.info("Neural Networks are 'Black Box' models. They calculate millions of internal weights to minimize loss, but they do not output a traditional statistical P-value or Z-score table.")
-                                
-                        except Exception as e:
-                            st.error(f"LSTM computation failed: {e}")
-
-        # ==========================================
-        # TAB 5: MARKET GUIDE
-        # ==========================================
-        with tab5:
             st.subheader("📖 Guide to Asset Classes & Tickers")
             st.markdown("Different assets behave completely differently. Understanding *what* drives an asset helps you choose the right forecasting model.")
             
@@ -341,7 +264,7 @@ else:
             st.markdown("### 💱 Currencies (Forex)")
             st.markdown("""
             * **What drives them:** Global macroeconomics. Interest rate hikes by central banks (like the US Fed), inflation rates, and international trade balances. When trading a currency, you are betting on the strength of one country against another.
-            * **Best Models:** **Macro SARIMAX** (using interest rates as exogenous variables) and **LSTMs** (for finding complex, non-linear patterns in chaotic forex data).
+            * **Best Models:** **Macro SARIMAX** (using interest rates as exogenous variables).
             * **Example Tickers (Must end in =X):** `EURUSD=X` (Euro/US Dollar), `JPY=X` (Yen/US Dollar)
             """)
 
