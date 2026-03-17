@@ -3,6 +3,7 @@ yfinance
 pandas
 plotly
 statsmodels
+numpy<2.0.0
 prophet
 scikit-learn
 tensorflow-cpu
