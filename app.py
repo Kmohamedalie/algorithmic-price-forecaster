@@ -31,21 +31,30 @@ end_date = st.sidebar.date_input("End Date", date.today())
 days_to_predict = st.sidebar.slider("Days to Forecast", 1, 90, 14)
 
 # --- DATA FETCHING ---
-@st.cache_data
+@st.cache_data(ttl=3600) # 1-hour expiration to prevent caching empty/bad data
 def load_data(ticker, start, end):
-    data = yf.download(ticker, start=start, end=end)
-    if isinstance(data.columns, pd.MultiIndex):
+    # Force dates to strict string format so yfinance doesn't get confused
+    start_str = start.strftime('%Y-%m-%d')
+    end_str = end.strftime('%Y-%m-%d')
+    
+    # Download data
+    data = yf.download(ticker, start=start_str, end=end_str)
+    
+    # Only try to flatten columns if the dataframe actually has data
+    if not data.empty and isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
+        
     data.reset_index(inplace=True)
     return data
 
 if start_date >= end_date:
     st.sidebar.error("Error: Start Date must be before End Date.")
 else:
-    df = load_data(ticker, start_date, end_date)
+    with st.spinner('Fetching market data...'):
+        df = load_data(ticker, start_date, end_date)
     
     if df.empty:
-        st.error(f"No data found for {ticker} in this date range. Check the ticker symbol.")
+        st.error(f"No data found for {ticker} in this date range. Check the ticker symbol, or ensure your dates don't fall strictly on a weekend/holiday when the market is closed.")
     else:
         # Plot raw data at the top so it's always visible
         fig_raw = go.Figure()
@@ -111,7 +120,7 @@ else:
                         model = ExponentialSmoothing(df_train_values, trend=trend, seasonal=seasonal, seasonal_periods=seasonal_periods)
                         fitted_model = model.fit()
                         forecast = fitted_model.forecast(days_to_predict)
-                        summary_text = "Check the chart for fit."
+                        summary_text = "Check the chart for fit. Exponential smoothing relies primarily on visual fit rather than standard summary tables."
 
                     last_date = df['Date'].iloc[-1]
                     future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
@@ -127,7 +136,7 @@ else:
                         st.text(summary_text)
 
                 except Exception as e:
-                    st.error("Model failed to converge. Try adjusting the parameters.")
+                    st.error("Model failed to converge. Try adjusting the parameters or selecting a larger timeframe.")
 
         # ==========================================
         # TAB 2: MACHINE LEARNING & PROPHET
