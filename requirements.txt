@@ -5,4 +5,4 @@ plotly
 statsmodels
 prophet
 scikit-learn
-tensorflow
+tensorflow-cpu
