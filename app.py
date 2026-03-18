@@ -11,6 +11,8 @@ from prophet import Prophet
 from sklearn.ensemble import RandomForestRegressor
 import re
 import warnings
+from fpdf import FPDF
+import tempfile
 
 # Ignore statistical convergence warnings in the UI
 warnings.filterwarnings("ignore")
@@ -203,14 +205,14 @@ else:
             macro_choice = st.selectbox("Select Macroeconomic Indicator (Exogenous Variable)", list(macro_dict.keys()))
             macro_ticker = macro_dict[macro_choice]
 
-            st.markdown("##### SARIMAX Parameters")
+            st.markdown("##### Target Asset SARIMAX Parameters")
             mcol1, mcol2, mcol3 = st.columns(3)
             with mcol1: mp = st.slider("p (AutoRegressive)", 0, 10, 5, key="t3_p")
             with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d")
             with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q")
 
             if st.button("Run Macro SARIMAX Model"):
-                with st.spinner(f"Fetching {macro_ticker} data and running complex math..."):
+                with st.spinner(f"Fetching data and aligning dates..."):
                     macro_df = load_data(macro_ticker, start_date, end_date)
                     
                     if macro_df.empty:
@@ -226,6 +228,7 @@ else:
                             exog = merged_df['Close_Macro'].values
 
                             try:
+                                # Reverted to the stable naive forecast for the exogenous variable
                                 macro_model = SARIMAX(endog, exog=exog, order=(mp, md, mq))
                                 macro_fitted = macro_model.fit(disp=False)
                                 
@@ -235,14 +238,61 @@ else:
                                 last_date = merged_df['Date'].iloc[-1]
                                 future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
 
+                                # CHART GENERATION
                                 fig_macro = go.Figure()
                                 fig_macro.add_trace(go.Scatter(x=merged_df['Date'].tail(150), y=merged_df['Close_Target'].tail(150), name="Target Actual", line=dict(color='blue')))
                                 fig_macro.add_trace(go.Scatter(x=future_dates, y=macro_forecast, name="Macro SARIMAX Forecast", line=dict(color='purple', width=3, dash='dot')))
-                                fig_macro.layout.update(title_text=f'{days_to_predict}-Day Forecast using {macro_ticker} as Exog')
+                                fig_macro.layout.update(title_text=f'{days_to_predict}-Day Target Forecast (Driven by {macro_ticker})')
                                 st.plotly_chart(fig_macro, use_container_width=True)
 
+                                # --- DATA EXPORT SECTION ---
+                                st.markdown("### 📥 Export Your Results")
+                                col_csv, col_pdf = st.columns(2)
+                                
+                                # 1. Generate CSV Data
+                                forecast_df = pd.DataFrame({'Date': future_dates, 'Predicted_Target_Price': macro_forecast, 'Exogenous_Variable_Assumption': future_exog})
+                                csv_data = forecast_df.to_csv(index=False).encode('utf-8')
+                                
+                                with col_csv:
+                                    st.download_button(
+                                        label="Download Forecast Data (.csv)",
+                                        data=csv_data,
+                                        file_name=f"{ticker}_SARIMAX_Forecast.csv",
+                                        mime="text/csv",
+                                        help="Download the predicted dates and prices to open in Excel."
+                                    )
+
+                                # 2. Generate PDF Summary
+                                summary_text = macro_fitted.summary().as_text()
+                                
+                                # We must use Courier (a monospace font) so the statistical table columns don't get misaligned!
+                                pdf = FPDF()
+                                pdf.add_page()
+                                pdf.set_font("Courier", size=8)
+                                
+                                # Clean the statsmodels text of weird characters before converting to PDF
+                                for line in summary_text.split('\n'):
+                                    clean_line = line.encode('latin-1', 'replace').decode('latin-1')
+                                    pdf.cell(0, 4, txt=clean_line, ln=1)
+                                
+                                # Save temporarily and read as bytes for the download button
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                                    pdf.output(tmp.name)
+                                    with open(tmp.name, "rb") as f:
+                                        pdf_bytes = f.read()
+
+                                with col_pdf:
+                                    st.download_button(
+                                        label="Download Model Summary (.pdf)",
+                                        data=pdf_bytes,
+                                        file_name=f"{ticker}_SARIMAX_Summary.pdf",
+                                        mime="application/pdf",
+                                        help="Download the dense statistical report containing your AIC scores and P-Values."
+                                    )
+                                
+                                # Render the summary in the UI as usual
                                 with st.expander("View Macro SARIMAX Summary"):
-                                    st.text(macro_fitted.summary().as_text())
+                                    st.text(summary_text)
                                     
                             except Exception as e:
                                 st.error("SARIMAX failed to converge. Try adjusting the sliders.")
@@ -263,14 +313,14 @@ else:
 
             st.markdown("### 💱 Currencies (Forex)")
             st.markdown("""
-            * **What drives them:** Global macroeconomics. Interest rate hikes by central banks (like the US Fed), inflation rates, and international trade balances. When trading a currency, you are betting on the strength of one country against another.
+            * **What drives them:** Global macroeconomics. Interest rate hikes by central banks (like the US Fed), inflation rates, and international trade balances.
             * **Best Models:** **Macro SARIMAX** (using interest rates as exogenous variables).
             * **Example Tickers (Must end in =X):** `EURUSD=X` (Euro/US Dollar), `JPY=X` (Yen/US Dollar)
             """)
 
             st.markdown("### 🛢️ Commodities & Precious Metals")
             st.markdown("""
-            * **What drives them:** Physical supply/demand, geopolitical crises, and inverse correlations to the US Dollar. For example, Gold acts as a "safe haven"—when interest rates go down or stock markets crash, Gold generally goes up.
+            * **What drives them:** Physical supply/demand, geopolitical crises, and inverse correlations to the US Dollar.
             * **Best Models:** **Macro SARIMAX** is exceptional here. Try predicting Gold while feeding the model the US Treasury Yield as an outside factor.
             * **Example Tickers:** `GC=F` (Gold Futures), `SI=F` (Silver Futures), `CL=F` (Crude Oil)
             """)
