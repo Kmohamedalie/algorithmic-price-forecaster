@@ -465,11 +465,11 @@ if not df.empty:
     with tab7:
         st.markdown("### 📖 Terminal Operations Guide")
         st.markdown("""
-        **1. Technical Analysis (Top Chart):** Use the sidebar to toggle SMA (trend direction) and RSI (overbought/oversold levels).
-        **2. Statistical Models (Tab 1):** Tune p, d, and q sliders to test ARIMA and SARIMA combinations. Look for the lowest RMSE.
-        **3. ML Models (Tab 2):** Great for baseline, calendar-based trends using Prophet or Random Forest.
-        **4. Macro SARIMAX (Tab 3):** The ultimate forecasting tool. Download your CSV/PDFs here!
-        **5. Macro Scanner (Tab 4):** Run the heatmap to find which global driver to use in Tab 3.
-        **6. Portfolio Optimizer (Tab 5):** Input a mix of assets to find the exact percentage to hold of each to maximize return for the lowest mathematical risk.
+        **1. Technical Analysis (Top Chart):** Use the sidebar to toggle SMA (trend direction) and RSI (overbought/oversold levels).\n
+        **2. Statistical Models (Tab 1):** Tune p, d, and q sliders to test ARIMA and SARIMA combinations. Look for the lowest RMSE.\n
+        **3. ML Models (Tab 2):** Great for baseline, calendar-based trends using Prophet or Random Forest.\n
+        **4. Macro SARIMAX (Tab 3):** The ultimate forecasting tool. Download your CSV/PDFs here!\n
+        **5. Macro Scanner (Tab 4):** Run the heatmap to find which global driver to use in Tab 3.\n
+        **6. Portfolio Optimizer (Tab 5):** Input a mix of assets to find the exact percentage to hold of each to maximize return for the lowest mathematical risk.\n
         **7. Algo Trading (Tab 6):** Backtest a fully automated Moving Average crossover strategy to see if an algorithm would have beaten a simple "Buy and Hold" approach.
         """)
