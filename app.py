@@ -22,6 +22,10 @@ st.set_page_config(page_title="Ultimate Market Predictor", layout="wide")
 st.title("📈 The Ultimate Multi-Model Market Predictor")
 st.markdown("Forecast Stocks, Currencies, and Commodities using Stats and Machine Learning.")
 
+# Initialize Session State for the Macro model so data survives button clicks
+if 'macro_results' not in st.session_state:
+    st.session_state.macro_results = None
+
 # --- SIDEBAR (Global Settings) ---
 st.sidebar.header("Global Data Configuration")
 
@@ -32,6 +36,12 @@ start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=3
 end_date = st.sidebar.date_input("End Date", date.today())
 
 days_to_predict = st.sidebar.slider("Days to Forecast", 1, 90, 14)
+
+# When global settings change, clear the old saved results so we don't download outdated data
+def clear_state():
+    st.session_state.macro_results = None
+
+st.sidebar.button("Reset Dashboard", on_click=clear_state)
 
 # --- DATA FETCHING ---
 @st.cache_data(ttl=3600)
@@ -202,15 +212,16 @@ else:
                 "US Dollar Index (DX-Y.NYB)": "DX-Y.NYB",
                 "Crude Oil (CL=F)": "CL=F"
             }
-            macro_choice = st.selectbox("Select Macroeconomic Indicator (Exogenous Variable)", list(macro_dict.keys()))
+            macro_choice = st.selectbox("Select Macroeconomic Indicator (Exogenous Variable)", list(macro_dict.keys()), on_change=clear_state)
             macro_ticker = macro_dict[macro_choice]
 
             st.markdown("##### Target Asset SARIMAX Parameters")
             mcol1, mcol2, mcol3 = st.columns(3)
-            with mcol1: mp = st.slider("p (AutoRegressive)", 0, 10, 5, key="t3_p")
-            with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d")
-            with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q")
+            with mcol1: mp = st.slider("p (AutoRegressive)", 0, 10, 5, key="t3_p", on_change=clear_state)
+            with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d", on_change=clear_state)
+            with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q", on_change=clear_state)
 
+            # When the user clicks Run, we do the math and save EVERYTHING to session_state
             if st.button("Run Macro SARIMAX Model"):
                 with st.spinner(f"Fetching data and aligning dates..."):
                     macro_df = load_data(macro_ticker, start_date, end_date)
@@ -228,7 +239,6 @@ else:
                             exog = merged_df['Close_Macro'].values
 
                             try:
-                                # Reverted to the stable naive forecast for the exogenous variable
                                 macro_model = SARIMAX(endog, exog=exog, order=(mp, md, mq))
                                 macro_fitted = macro_model.fit(disp=False)
                                 
@@ -238,64 +248,69 @@ else:
                                 last_date = merged_df['Date'].iloc[-1]
                                 future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
 
-                                # CHART GENERATION
+                                # 1. Create Chart
                                 fig_macro = go.Figure()
                                 fig_macro.add_trace(go.Scatter(x=merged_df['Date'].tail(150), y=merged_df['Close_Target'].tail(150), name="Target Actual", line=dict(color='blue')))
                                 fig_macro.add_trace(go.Scatter(x=future_dates, y=macro_forecast, name="Macro SARIMAX Forecast", line=dict(color='purple', width=3, dash='dot')))
                                 fig_macro.layout.update(title_text=f'{days_to_predict}-Day Target Forecast (Driven by {macro_ticker})')
-                                st.plotly_chart(fig_macro, use_container_width=True)
 
-                                # --- DATA EXPORT SECTION ---
-                                st.markdown("### 📥 Export Your Results")
-                                col_csv, col_pdf = st.columns(2)
-                                
-                                # 1. Generate CSV Data
+                                # 2. Generate CSV Bytes
                                 forecast_df = pd.DataFrame({'Date': future_dates, 'Predicted_Target_Price': macro_forecast, 'Exogenous_Variable_Assumption': future_exog})
                                 csv_data = forecast_df.to_csv(index=False).encode('utf-8')
                                 
-                                with col_csv:
-                                    st.download_button(
-                                        label="Download Forecast Data (.csv)",
-                                        data=csv_data,
-                                        file_name=f"{ticker}_SARIMAX_Forecast.csv",
-                                        mime="text/csv",
-                                        help="Download the predicted dates and prices to open in Excel."
-                                    )
-
-                                # 2. Generate PDF Summary
+                                # 3. Generate PDF Bytes
                                 summary_text = macro_fitted.summary().as_text()
-                                
-                                # We must use Courier (a monospace font) so the statistical table columns don't get misaligned!
                                 pdf = FPDF()
                                 pdf.add_page()
                                 pdf.set_font("Courier", size=8)
-                                
-                                # Clean the statsmodels text of weird characters before converting to PDF
                                 for line in summary_text.split('\n'):
                                     clean_line = line.encode('latin-1', 'replace').decode('latin-1')
                                     pdf.cell(0, 4, txt=clean_line, ln=1)
-                                
-                                # Save temporarily and read as bytes for the download button
+                                    
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                                     pdf.output(tmp.name)
                                     with open(tmp.name, "rb") as f:
                                         pdf_bytes = f.read()
 
-                                with col_pdf:
-                                    st.download_button(
-                                        label="Download Model Summary (.pdf)",
-                                        data=pdf_bytes,
-                                        file_name=f"{ticker}_SARIMAX_Summary.pdf",
-                                        mime="application/pdf",
-                                        help="Download the dense statistical report containing your AIC scores and P-Values."
-                                    )
-                                
-                                # Render the summary in the UI as usual
-                                with st.expander("View Macro SARIMAX Summary"):
-                                    st.text(summary_text)
+                                # SAVE TO SESSION STATE
+                                st.session_state.macro_results = {
+                                    'fig': fig_macro,
+                                    'csv': csv_data,
+                                    'pdf': pdf_bytes,
+                                    'summary': summary_text
+                                }
                                     
                             except Exception as e:
                                 st.error("SARIMAX failed to converge. Try adjusting the sliders.")
+
+            # Display the UI using data from session_state (so it survives download clicks)
+            if st.session_state.macro_results is not None:
+                res = st.session_state.macro_results
+                
+                st.plotly_chart(res['fig'], use_container_width=True)
+
+                st.markdown("### 📥 Export Your Results")
+                col_csv, col_pdf = st.columns(2)
+                
+                with col_csv:
+                    st.download_button(
+                        label="Download Forecast Data (.csv)",
+                        data=res['csv'],
+                        file_name=f"{ticker}_SARIMAX_Forecast.csv",
+                        mime="text/csv",
+                        help="Download the predicted dates and prices to open in Excel."
+                    )
+                with col_pdf:
+                    st.download_button(
+                        label="Download Model Summary (.pdf)",
+                        data=res['pdf'],
+                        file_name=f"{ticker}_SARIMAX_Summary.pdf",
+                        mime="application/pdf",
+                        help="Download the dense statistical report containing your AIC scores and P-Values."
+                    )
+                
+                with st.expander("View Macro SARIMAX Summary"):
+                    st.text(res['summary'])
 
         # ==========================================
         # TAB 4: MARKET GUIDE
