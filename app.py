@@ -23,7 +23,7 @@ st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide")
 st.title("📈 The Multi-Asset Quantitative Terminal")
 st.markdown("Forecast Stocks, Forex, Crypto, Bonds, Real Estate, and Commodities using Advanced Statistics and Machine Learning.")
 
-# Initialize Session State for the Macro model so data survives button clicks
+# Initialize Session State securely
 if 'macro_results' not in st.session_state:
     st.session_state.macro_results = None
 
@@ -38,11 +38,9 @@ end_date = st.sidebar.date_input("End Date", date.today())
 
 days_to_predict = st.sidebar.slider("Days to Forecast", 1, 90, 14)
 
-# When global settings change, clear the old saved results so we don't download outdated data
-def clear_state():
+# A manual manual reset button in case the user wants to clear the screen
+if st.sidebar.button("🧹 Clear Saved Data"):
     st.session_state.macro_results = None
-
-st.sidebar.button("Reset Dashboard", on_click=clear_state)
 
 # --- DATA FETCHING ---
 @st.cache_data(ttl=3600)
@@ -113,7 +111,6 @@ else:
             if st.button(f"Run {model_type_stat} Model"):
                 with st.spinner(f"Fitting {model_type_stat} model..."):
                     try:
-                        # Safety check for RMSE calculation length
                         skip_days = 30 if len(df_train_values) > 60 else 0 
 
                         if model_type_stat == "ARIMA":
@@ -137,8 +134,7 @@ else:
                             summary_text = "Note: Exponential smoothing calculates a visual fit and does not generate standard P-value summary tables."
                             rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
 
-                        # Display RMSE Metric
-                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4), help="Root Mean Square Error. Lower is better! This shows how far off the model was on average during the historical training data.")
+                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4), help="Root Mean Square Error. Lower is better!")
 
                         last_date = df['Date'].iloc[-1]
                         future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
@@ -170,7 +166,6 @@ else:
                         future = m.make_future_dataframe(periods=days_to_predict)
                         prophet_forecast = m.predict(future)
                         
-                        # Calculate RMSE
                         historical_predictions = prophet_forecast['yhat'][:len(df_prophet)]
                         rmse = np.sqrt(mean_squared_error(df_prophet['y'], historical_predictions))
                         st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4))
@@ -198,7 +193,6 @@ else:
                         rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
                         rf_model.fit(X, y)
                         
-                        # Calculate RMSE
                         historical_predictions = rf_model.predict(X)
                         rmse = np.sqrt(mean_squared_error(y, historical_predictions))
                         st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4))
@@ -220,7 +214,7 @@ else:
                         st.plotly_chart(fig_rf, use_container_width=True)
                         
                 with st.expander("Why is there no Model Summary here?"):
-                    st.info("Unlike ARIMA or SARIMA, Machine Learning algorithms (like Random Forest) and Prophet are not traditional statistical equations. They do not calculate p-values, z-scores, or standard errors for individual variables. Therefore, there is no statistical summary table to display.")
+                    st.info("Machine Learning algorithms do not calculate standard statistical p-values. There is no summary table to display.")
 
         # ==========================================
         # TAB 3: MACROECONOMIC SARIMAX
@@ -234,14 +228,16 @@ else:
                 "US Dollar Index (DX-Y.NYB)": "DX-Y.NYB",
                 "Crude Oil (CL=F)": "CL=F"
             }
-            macro_choice = st.selectbox("Select Macroeconomic Indicator (Exogenous Variable)", list(macro_dict.keys()), on_change=clear_state)
+            # REMOVED on_change clear_state triggers here!
+            macro_choice = st.selectbox("Select Macroeconomic Indicator (Exogenous Variable)", list(macro_dict.keys()))
             macro_ticker = macro_dict[macro_choice]
 
             st.markdown("##### Target Asset SARIMAX Parameters")
             mcol1, mcol2, mcol3 = st.columns(3)
-            with mcol1: mp = st.slider("p (AutoRegressive)", 0, 10, 5, key="t3_p", on_change=clear_state)
-            with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d", on_change=clear_state)
-            with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q", on_change=clear_state)
+            # REMOVED on_change clear_state triggers here!
+            with mcol1: mp = st.slider("p (AutoRegressive)", 0, 10, 5, key="t3_p")
+            with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d")
+            with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q")
 
             if st.button("Run Macro SARIMAX Model"):
                 with st.spinner(f"Fetching data and aligning dates..."):
@@ -266,7 +262,6 @@ else:
                                 future_exog = np.repeat(exog[-1], days_to_predict)
                                 macro_forecast = macro_fitted.forecast(steps=days_to_predict, exog=future_exog)
                                 
-                                # Calculate RMSE (Skipping first 30 days)
                                 skip_days = 30 if len(endog) > 60 else 0
                                 rmse = np.sqrt(mean_squared_error(endog[skip_days:], macro_fitted.fittedvalues[skip_days:]))
 
@@ -303,41 +298,46 @@ else:
                                     'csv': csv_data,
                                     'pdf': pdf_bytes,
                                     'summary': summary_text,
-                                    'rmse': rmse
+                                    'rmse': rmse,
+                                    'ticker': ticker # Save ticker to prevent cross-contamination
                                 }
                                     
                             except Exception as e:
                                 st.error("SARIMAX failed to converge. Try adjusting the sliders.")
 
-            # Display the UI using data from session_state
+            # Display the UI using data firmly locked in session_state
             if st.session_state.macro_results is not None:
                 res = st.session_state.macro_results
                 
-                st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(res['rmse'], 4), help="Root Mean Square Error. Lower is better!")
-                st.plotly_chart(res['fig'], use_container_width=True)
+                # Only display if the user hasn't completely changed the ticker in the sidebar
+                if res.get('ticker') == ticker:
+                    st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(res['rmse'], 4), help="Root Mean Square Error. Lower is better!")
+                    st.plotly_chart(res['fig'], use_container_width=True)
 
-                st.markdown("### 📥 Export Your Results")
-                col_csv, col_pdf = st.columns(2)
-                
-                with col_csv:
-                    st.download_button(
-                        label="Download Forecast Data (.csv)",
-                        data=res['csv'],
-                        file_name=f"{ticker}_SARIMAX_Forecast.csv",
-                        mime="text/csv",
-                        help="Download the predicted dates and prices to open in Excel."
-                    )
-                with col_pdf:
-                    st.download_button(
-                        label="Download Model Summary (.pdf)",
-                        data=res['pdf'],
-                        file_name=f"{ticker}_SARIMAX_Summary.pdf",
-                        mime="application/pdf",
-                        help="Download the dense statistical report containing your AIC scores and P-Values."
-                    )
-                
-                with st.expander("View Macro SARIMAX Summary"):
-                    st.text(res['summary'])
+                    st.markdown("### 📥 Export Your Results")
+                    col_csv, col_pdf = st.columns(2)
+                    
+                    with col_csv:
+                        st.download_button(
+                            label="Download Forecast Data (.csv)",
+                            data=res['csv'],
+                            file_name=f"{ticker}_SARIMAX_Forecast.csv",
+                            mime="text/csv",
+                            help="Download the predicted dates and prices to open in Excel."
+                        )
+                    with col_pdf:
+                        st.download_button(
+                            label="Download Model Summary (.pdf)",
+                            data=res['pdf'],
+                            file_name=f"{ticker}_SARIMAX_Summary.pdf",
+                            mime="application/pdf",
+                            help="Download the dense statistical report containing your AIC scores and P-Values."
+                        )
+                    
+                    with st.expander("View Macro SARIMAX Summary"):
+                        st.text(res['summary'])
+                else:
+                    st.info("Ticker changed. Click 'Run Macro SARIMAX Model' to generate new data.")
 
         # ==========================================
         # TAB 4: MARKET GUIDE
