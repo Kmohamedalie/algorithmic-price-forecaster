@@ -17,11 +17,16 @@ import tempfile
 
 # Ignore statistical convergence warnings in the UI
 warnings.filterwarnings("ignore")
-
 # --- UI SETUP ---
-st.set_page_config(page_title="Ultimate Market Predictor", layout="wide")
-st.title("📈 The Ultimate Multi-Model Market Predictor")
-st.markdown("Forecast Stocks, Currencies, Crypto, and Commodities using Stats and Machine Learning.")
+# This changes the name in the user's web browser tab
+st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide") 
+
+# This changes the big bold text at the top of the app
+st.title("📈 The Multi-Asset Quantitative Terminal") 
+
+# This changes the subtitle description underneath it
+st.markdown("Forecast Stocks, Forex, Crypto, Bonds, and Commodities using Advanced Statistics and Machine Learning.") 
+
 
 # Initialize Session State for the Macro model so data survives button clicks
 if 'macro_results' not in st.session_state:
