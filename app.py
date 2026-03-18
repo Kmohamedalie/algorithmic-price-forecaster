@@ -325,21 +325,29 @@ if not df.empty:
             st.plotly_chart(st.session_state.corr_data, use_container_width=True)
             st.info("💡 **How to read this:** Use the darkest colored asset (closest to +1 or -1) as your exogenous variable in Tab 3!")
 
+
     # ==========================================
-    # TAB 5: PORTFOLIO OPTIMIZER
+    # TAB 5: PORTFOLIO OPTIMIZER (Upgraded Time Horizon)
     # ==========================================
     with tab5:
         st.subheader("⚖️ Modern Portfolio Theory (MPT)")
-        multi_tickers = st.text_input("Portfolio Tickers (comma separated)", "AAPL, MSFT, GLD, BTC-USD").upper()
+        
+        # New dedicated inputs just for the optimizer
+        multi_tickers = st.text_input("Portfolio Tickers (comma separated)", "VTI, TLT, IEF, GLD, DBC").upper()
+        port_years = st.slider("Optimization Lookback Period (Years)", 1, 30, 10, help="Test how these assets would have balanced each other over decades, independent of your short-term forecasting dates.")
         
         if st.button("Optimize Weights"):
-            with st.spinner("Calculating the Efficient Frontier..."):
+            with st.spinner(f"Calculating the Efficient Frontier over the last {port_years} years..."):
                 t_list = [x.strip() for x in multi_tickers.split(",")]
                 if len(t_list) < 2:
                     st.error("You need at least 2 assets to build a portfolio!")
                 else:
                     try:
-                        port_data = yf.download(t_list, start=start_date, end=end_date)['Close'].dropna()
+                        # Calculate the custom deep-history start date
+                        port_start_date = date.today() - timedelta(days=365 * port_years)
+                        
+                        # Download using the custom deep-history date
+                        port_data = yf.download(t_list, start=port_start_date, end=end_date)['Close'].dropna()
                         returns = port_data.pct_change().dropna()
                         mean_returns = returns.mean() * 252
                         cov_matrix = returns.cov() * 252
@@ -363,15 +371,15 @@ if not df.empty:
                             p_ret = np.sum(mean_returns * opt_weights)
                             p_vol = np.sqrt(np.dot(opt_weights.T, np.dot(cov_matrix, opt_weights)))
                             p_sharpe = (p_ret - risk_free_rate) / p_vol
-                            st.session_state.port_results = {'weights': opt_weights, 'ret': p_ret, 'vol': p_vol, 'sharpe': p_sharpe, 'tickers': list(port_data.columns)}
+                            st.session_state.port_results = {'weights': opt_weights, 'ret': p_ret, 'vol': p_vol, 'sharpe': p_sharpe, 'tickers': list(port_data.columns), 'years': port_years}
                         else:
-                            st.error("Optimization Failed.")
+                            st.error("Optimization Failed. Some assets may not have existed that long ago.")
                     except Exception as e:
                         st.error(f"Error: {e}")
         
         if st.session_state.port_results is not None:
             res = st.session_state.port_results
-            st.success("✅ **Optimization Successful!**")
+            st.success(f"✅ **Optimization Successful! (Based on {res.get('years', port_years)} years of historical data)**")
             m1, m2, m3 = st.columns(3)
             m1.metric("Expected Annual Return", f"{res['ret']*100:.2f}%")
             m2.metric("Portfolio Volatility (Risk)", f"{res['vol']*100:.2f}%")
@@ -380,6 +388,7 @@ if not df.empty:
             fig_pie = go.Figure(data=[go.Pie(labels=res['tickers'], values=res['weights'], hole=.4)])
             st.plotly_chart(fig_pie, use_container_width=True)
 
+    
     # ==========================================
     # TAB 6: GUIDE
     # ==========================================
