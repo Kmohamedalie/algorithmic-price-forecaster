@@ -1,27 +1,28 @@
-# 📈 The Multi-Asset Quantitative Terminal
+# 📈 Multi-Asset Quantitative Strategy Terminal
 
 ## Overview
-The Multi-Asset Quantitative Terminal is an interactive, Python-based web application designed to forecast a wide variety of financial instruments, including stocks, currencies, cryptocurrencies, market indices, and commodities. Built with Streamlit, this tool allows users to pull live financial data and apply a variety of forecasting techniques—ranging from classic statistical models to modern machine learning algorithms—to predict future asset prices. 
+The Multi-Asset Quantitative Strategy Terminal is an advanced, Python-based web application designed for comprehensive financial analysis, time-series forecasting, and portfolio optimization. Built with Streamlit, this tool bridges the gap between traditional technical analysis and institutional-grade quantitative modeling. It allows users to forecast stocks, currencies, cryptocurrencies, market indices, and commodities using classic statistics, machine learning, and macroeconomic drivers.
 
 ## Core Features
-* **Live Data Integration:** Fetches historical market data dynamically based on user-defined tickers and date ranges. Now supports 24/7 assets like Cryptocurrencies without breaking on weekend gaps.
-* **Mathematical Grading (RMSE):** Automatically calculates the Root Mean Square Error (RMSE) for every model, allowing you to mathematically prove which algorithm performed best on historical data before trusting its future forecast.
-* **Export & Reporting:** Temporarily saves session states to allow users to download raw forecast data as `.csv` files and dense statistical summaries as perfectly formatted `.pdf` reports.
-* **Classic Statistical Modeling:** Includes customizable ARIMA, SARIMA (Seasonal), and Exponential Smoothing (ETS) models for baseline time-series forecasting.
-* **Algorithmic & Machine Learning:** Leverages Facebook Prophet for trend identification and a Random Forest Regressor for pattern-based predictions.
-* **Macroeconomic SARIMAX:** Offers multivariate forecasting by mathematically factoring in exogenous macroeconomic variables (like the 10-Year US Treasury Yield, US Dollar Index, or Crude Oil).
-* **Built-in Asset Class Guide:** Provides an educational overview of different asset classes (Stocks, Forex, Crypto, Real Estate, Commodities) to help users select the most appropriate forecasting model.
-* **Interactive Visualizations:** Generates dynamic, interactive charts to visualize historical data alongside predictive forecasts.
+* **Technical Analysis Dashboard:** Interactive primary charts featuring togglable Simple Moving Averages (SMA 50 & 200) and Relative Strength Index (RSI) overlays.
+* **Mathematical Grading (RMSE):** Automatically calculates the Root Mean Square Error (RMSE) for all forecasting models, allowing you to mathematically validate historical accuracy.
+* **Classic Statistical Forecasting (Tab 1):** Highly tunable ARIMA, SARIMA (Seasonal), and Exponential Smoothing (ETS) models for momentum and baseline time-series forecasting.
+* **Machine Learning & Algorithmic (Tab 2):** Leverages Facebook Prophet for trend identification and a Random Forest Regressor for calendar-based pattern recognition.
+* **Macroeconomic SARIMAX (Tab 3):** Offers multivariate forecasting by mathematically factoring in exogenous macroeconomic variables. Secure session states allow for direct exporting of forecast data (`.csv`) and detailed statistical summaries (`.pdf`).
+* **Macro Correlation Scanner (Tab 4):** Automatically generates a correlation heatmap comparing your target asset against global drivers (US Dollar, Gold, Crude Oil, 10Y Yield, S&P 500) to identify optimal exogenous variables.
+* **Modern Portfolio Optimizer (Tab 5):** Utilizes `scipy` quadratic programming to calculate the Markowitz Efficient Frontier. Input multiple assets to find the exact capital allocation that maximizes the Sharpe Ratio (highest return for the lowest risk).
+* **Built-in Strategy Guide (Tab 6):** An educational overview of different asset classes and instructions on how to navigate the terminal's modules.
 
 ## Technology Stack
 This application relies on the following core libraries:
-* **Streamlit:** For the interactive web interface.
-* **yfinance:** To download historical market data from Yahoo Finance.
-* **Pandas & NumPy:** For robust data manipulation and structuring.
-* **Plotly:** To render interactive financial charts.
+* **Streamlit:** For the interactive web interface and session state management.
+* **yfinance:** To download live historical market data.
+* **Pandas & NumPy:** For robust data manipulation, rolling calculations, and structuring.
+* **Plotly:** To render interactive financial charts, heatmaps, and donut graphs.
 * **Statsmodels:** For implementing ARIMA, SARIMAX, and Exponential Smoothing algorithms.
-* **Prophet:** For automated forecasting of time-series data.
-* **Scikit-Learn:** For calculating the Root Mean Square Error (RMSE) and running the Random Forest model.
+* **Prophet:** For automated forecasting of 24/7 time-series data.
+* **Scikit-Learn:** For running the Random Forest regressor and calculating RMSE scores.
+* **SciPy:** For running Sequential Least Squares Programming (SLSQP) in portfolio optimization.
 * **FPDF:** For generating lightweight, downloadable PDF summary reports.
 
 ## Installation and Setup
@@ -37,8 +38,9 @@ Launch the Streamlit server from your terminal:
 streamlit run app.py
 
 ## How to Use
-**1. Configure Data:** Open the sidebar to input your target ticker symbol (e.g., AAPL for Apple, EURUSD=X for Forex, BTC-USD for Bitcoin).
-**2. Set Timeframe:** Select your historical start and end dates, and use the slider to determine how many days into the future you want to predict.
-**3. Choose a Methodology:** Navigate through the application tabs to select your preferred forecasting approach (Statistical, ML & Prophet, or Macro SARIMAX).
-**4. Tune Parameters:** Adjust the mathematical sliders (like p, d, q for ARIMA) to fit the model to the specific behavior of your chosen asset. Lower your RMSE score to find the perfect fit!
-**5. Generate & Export:** Click the run button within your chosen tab to process the data and generate your interactive prediction chart. Use the download buttons below the chart to export your findings.
+**1. Global Configuration:** Use the sidebar to enter your target ticker symbol (e.g., AAPL, EURUSD=X, BTC-USD) and set your historical date range and forecast horizon.  <br>
+**2. Technical Analysis:** Toggle the SMA and RSI checkboxes in the sidebar to read current market conditions. <br>
+**3. Identify Drivers:** Navigate to Tab 4 (Macro Scanner) to find which global macroeconomic indicators are inversely or directly correlated to your asset.  <br>
+**4. Forecast Future Prices:** Use Tabs 1, 2, or 3 to run statistical or machine learning models. Use the RMSE grade to determine which model is the most accurate for your specific asset.  <br>
+**5. Export Data:** In Tab 3, download your raw CSV forecasts and PDF statistical summaries for external use.  <br>
+**6. Optimize Capital:** Navigate to Tab 5, enter a basket of tickers, and calculate the mathematically perfect portfolio weights to maximize your risk-adjusted returns.
