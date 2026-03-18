@@ -9,6 +9,7 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from prophet import Prophet
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
 import re
 import warnings
 from fpdf import FPDF
@@ -20,7 +21,7 @@ warnings.filterwarnings("ignore")
 # --- UI SETUP ---
 st.set_page_config(page_title="Ultimate Market Predictor", layout="wide")
 st.title("📈 The Ultimate Multi-Model Market Predictor")
-st.markdown("Forecast Stocks, Currencies, and Commodities using Stats and Machine Learning.")
+st.markdown("Forecast Stocks, Currencies, Crypto, and Commodities using Stats and Machine Learning.")
 
 # Initialize Session State for the Macro model so data survives button clicks
 if 'macro_results' not in st.session_state:
@@ -29,7 +30,7 @@ if 'macro_results' not in st.session_state:
 # --- SIDEBAR (Global Settings) ---
 st.sidebar.header("Global Data Configuration")
 
-raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X, GC=F)", "AAPL").upper()
+raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X, BTC-USD)", "AAPL").upper()
 ticker = re.split(r'[,\s]+', raw_ticker_input)[0].strip()
 
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*3))
@@ -117,16 +118,25 @@ else:
                             fitted_model = model.fit()
                             forecast = fitted_model.forecast(steps=days_to_predict)
                             summary_text = fitted_model.summary().as_text()
+                            # Calculate RMSE (Skipping first 30 days to avoid startup noise)
+                            rmse = np.sqrt(mean_squared_error(df_train_values[30:], fitted_model.fittedvalues[30:]))
+
                         elif model_type_stat == "SARIMA (Seasonal)":
                             model = SARIMAX(df_train_values, order=(p, d, q), seasonal_order=(P, D, Q, s))
                             fitted_model = model.fit(disp=False)
                             forecast = fitted_model.forecast(steps=days_to_predict)
                             summary_text = fitted_model.summary().as_text()
+                            rmse = np.sqrt(mean_squared_error(df_train_values[30:], fitted_model.fittedvalues[30:]))
+
                         elif model_type_stat == "Exponential Smoothing (ETS)":
                             model = ExponentialSmoothing(df_train_values, trend=trend, seasonal=seasonal, seasonal_periods=seasonal_periods)
                             fitted_model = model.fit()
                             forecast = fitted_model.forecast(days_to_predict)
                             summary_text = "Note: Exponential smoothing calculates a visual fit and does not generate standard P-value summary tables."
+                            rmse = np.sqrt(mean_squared_error(df_train_values[30:], fitted_model.fittedvalues[30:]))
+
+                        # Display RMSE Metric
+                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4), help="Root Mean Square Error. Lower is better! This shows how far off the model was on average during the historical training data.")
 
                         last_date = df['Date'].iloc[-1]
                         future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
@@ -158,6 +168,11 @@ else:
                         future = m.make_future_dataframe(periods=days_to_predict)
                         prophet_forecast = m.predict(future)
                         
+                        # Calculate RMSE
+                        historical_predictions = prophet_forecast['yhat'][:len(df_prophet)]
+                        rmse = np.sqrt(mean_squared_error(df_prophet['y'], historical_predictions))
+                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4))
+                        
                         fig_proph = go.Figure()
                         fig_proph.add_trace(go.Scatter(x=df_prophet['ds'].tail(150), y=df_prophet['y'].tail(150), name="Actual", line=dict(color='blue')))
                         future_only = prophet_forecast.tail(days_to_predict)
@@ -180,6 +195,11 @@ else:
                         
                         rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
                         rf_model.fit(X, y)
+                        
+                        # Calculate RMSE
+                        historical_predictions = rf_model.predict(X)
+                        rmse = np.sqrt(mean_squared_error(y, historical_predictions))
+                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4))
                         
                         last_date = df['Date'].iloc[-1]
                         future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
@@ -221,7 +241,6 @@ else:
             with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d", on_change=clear_state)
             with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q", on_change=clear_state)
 
-            # When the user clicks Run, we do the math and save EVERYTHING to session_state
             if st.button("Run Macro SARIMAX Model"):
                 with st.spinner(f"Fetching data and aligning dates..."):
                     macro_df = load_data(macro_ticker, start_date, end_date)
@@ -244,6 +263,9 @@ else:
                                 
                                 future_exog = np.repeat(exog[-1], days_to_predict)
                                 macro_forecast = macro_fitted.forecast(steps=days_to_predict, exog=future_exog)
+                                
+                                # Calculate RMSE (Skipping first 30 days)
+                                rmse = np.sqrt(mean_squared_error(endog[30:], macro_fitted.fittedvalues[30:]))
 
                                 last_date = merged_df['Date'].iloc[-1]
                                 future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
@@ -277,16 +299,18 @@ else:
                                     'fig': fig_macro,
                                     'csv': csv_data,
                                     'pdf': pdf_bytes,
-                                    'summary': summary_text
+                                    'summary': summary_text,
+                                    'rmse': rmse
                                 }
                                     
                             except Exception as e:
                                 st.error("SARIMAX failed to converge. Try adjusting the sliders.")
 
-            # Display the UI using data from session_state (so it survives download clicks)
+            # Display the UI using data from session_state
             if st.session_state.macro_results is not None:
                 res = st.session_state.macro_results
                 
+                st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(res['rmse'], 4), help="Root Mean Square Error. Lower is better!")
                 st.plotly_chart(res['fig'], use_container_width=True)
 
                 st.markdown("### 📥 Export Your Results")
@@ -331,6 +355,13 @@ else:
             * **What drives them:** Global macroeconomics. Interest rate hikes by central banks (like the US Fed), inflation rates, and international trade balances.
             * **Best Models:** **Macro SARIMAX** (using interest rates as exogenous variables).
             * **Example Tickers (Must end in =X):** `EURUSD=X` (Euro/US Dollar), `JPY=X` (Yen/US Dollar)
+            """)
+
+            st.markdown("### 🪙 Cryptocurrencies")
+            st.markdown("""
+            * **What drives them:** Network adoption, retail sentiment, regulatory news, and global liquidity (interest rates). They trade 24/7, meaning there are no weekend data gaps.
+            * **Best Models:** **Facebook Prophet** is excellent at catching the 24/7 weekly seasonality of retail crypto traders. **Macro SARIMAX** is also powerful if you use the US Dollar Index or the NASDAQ as an outside variable, as Bitcoin often reacts to macro liquidity.
+            * **Example Tickers (Must end in -USD):** `BTC-USD` (Bitcoin), `ETH-USD` (Ethereum), `SOL-USD` (Solana)
             """)
 
             st.markdown("### 🛢️ Commodities & Precious Metals")
