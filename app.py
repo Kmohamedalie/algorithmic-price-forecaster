@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 from datetime import date, timedelta
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -10,373 +11,276 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from prophet import Prophet
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
+import scipy.optimize as sco
 import re
 import warnings
 from fpdf import FPDF
 import tempfile
 
-# Ignore statistical convergence warnings in the UI
 warnings.filterwarnings("ignore")
 
 # --- UI SETUP ---
 st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide")
-st.title("📈 The Multi-Asset Quantitative Terminal")
-st.markdown("Forecast Stocks, Forex, Crypto, Bonds, Real Estate, and Commodities using Advanced Statistics and Machine Learning.")
+st.title("📈 Multi-Asset Quantitative Strategy Terminal")
 
-# Initialize Session State securely
-if 'macro_results' not in st.session_state:
-    st.session_state.macro_results = None
+# Initialize Session States (Kept strictly false for auto-clearing)
+if 'macro_results' not in st.session_state: st.session_state.macro_results = None
+if 'corr_data' not in st.session_state: st.session_state.corr_data = None
+if 'port_results' not in st.session_state: st.session_state.port_results = None
 
-# --- SIDEBAR (Global Settings) ---
-st.sidebar.header("Global Data Configuration")
-
-raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X, BTC-USD, VNQ)", "AAPL").upper()
+# --- SIDEBAR ---
+st.sidebar.header("Global Configuration")
+raw_ticker_input = st.sidebar.text_input("Target Ticker (For Tabs 1-3)", "AAPL").upper()
 ticker = re.split(r'[,\s]+', raw_ticker_input)[0].strip()
 
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*3))
 end_date = st.sidebar.date_input("End Date", date.today())
+days_to_predict = st.sidebar.slider("Forecast Horizon", 1, 90, 14)
 
-days_to_predict = st.sidebar.slider("Days to Forecast", 1, 90, 14)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Technical Overlays")
+show_sma = st.sidebar.checkbox("Show SMA (50 & 200)", value=True)
+show_rsi = st.sidebar.checkbox("Show RSI (14)", value=True)
 
-# A manual manual reset button in case the user wants to clear the screen
+# A manual reset button
 if st.sidebar.button("🧹 Clear Saved Data"):
     st.session_state.macro_results = None
+    st.session_state.corr_data = None
+    st.session_state.port_results = None
 
-# --- DATA FETCHING ---
+# --- DATA ENGINE ---
 @st.cache_data(ttl=3600)
 def load_data(ticker_symbol, start, end):
-    start_str = start.strftime('%Y-%m-%d')
-    end_str = end.strftime('%Y-%m-%d')
-    data = yf.download(ticker_symbol, start=start_str, end=end_str)
-    
+    data = yf.download(ticker_symbol, start=start, end=end, progress=False)
     if not data.empty and isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
-        
     data.reset_index(inplace=True)
     return data
 
-if start_date >= end_date:
-    st.sidebar.error("Error: Start Date must be before End Date.")
-else:
-    with st.spinner('Fetching market data...'):
-        df = load_data(ticker, start_date, end_date)
+df = load_data(ticker, start_date, end_date)
+
+if not df.empty:
+    # Calculate TA Indicators
+    df['SMA50'] = df['Close'].rolling(window=50).mean()
+    df['SMA200'] = df['Close'].rolling(window=200).mean()
     
-    if df.empty:
-        st.error(f"No data found for {ticker} in this date range. Check the ticker symbol.")
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+
+    # MAIN CHART
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3]) if show_rsi else go.Figure()
+    
+    main_trace = go.Scatter(x=df['Date'], y=df['Close'], name="Close Price", line=dict(color='#1f77b4'))
+    if show_rsi:
+        fig.add_trace(main_trace, row=1, col=1)
+        if show_sma:
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['SMA50'], name="SMA 50", line=dict(width=1)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['SMA200'], name="SMA 200", line=dict(width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['RSI'], name="RSI", line=dict(color='orange')), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dot", row=2, col=1, line_color="red")
+        fig.add_hline(y=30, line_dash="dot", row=2, col=1, line_color="green")
     else:
-        fig_raw = go.Figure()
-        fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="Historical Close"))
-        fig_raw.layout.update(title_text=f'Historical Price Data for {ticker}', xaxis_rangeslider_visible=True)
-        st.plotly_chart(fig_raw, use_container_width=True)
+        fig.add_trace(main_trace)
+        if show_sma:
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['SMA50'], name="SMA 50"))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['SMA200'], name="SMA 200"))
+    
+    st.plotly_chart(fig, use_container_width=True)
 
-        df_train_values = df['Close'].dropna().values
+    # --- TABS ---
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Forecasting Models", "🌍 Macro Scanner", "⚖️ Portfolio Optimizer", "📖 Strategy Guide"])
 
-        # --- TABS SETUP ---
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📊 Statistical", 
-            "🤖 ML & Prophet", 
-            "🌍 Macro SARIMAX", 
-            "📖 Asset Class Guide"
-        ])
-
-        # ==========================================
-        # TAB 1: STATISTICAL MODELS
-        # ==========================================
-        with tab1:
-            st.subheader("Classic Statistical Forecasting")
-            model_type_stat = st.selectbox("Choose a Statistical Model", 
-                                           ["ARIMA", "SARIMA (Seasonal)", "Exponential Smoothing (ETS)"])
-            
-            st.markdown("##### Model Parameters")
-            col1, col2, col3 = st.columns(3)
-            if model_type_stat in ["ARIMA", "SARIMA (Seasonal)"]:
-                with col1: p = st.slider("p (AutoRegressive)", 0, 10, 5, key="t1_p")
-                with col2: d = st.slider("d (Differencing)", 0, 2, 1, key="t1_d")
-                with col3: q = st.slider("q (Moving Average)", 0, 10, 0, key="t1_q")
-
-            if model_type_stat == "SARIMA (Seasonal)":
-                st.markdown("##### Seasonal Parameters")
-                scol1, scol2, scol3, scol4 = st.columns(4)
-                with scol1: P = st.slider("P (Seasonal AR)", 0, 3, 0, key="t1_P")
-                with scol2: D = st.slider("D (Seasonal Diff)", 0, 1, 0, key="t1_D")
-                with scol3: Q = st.slider("Q (Seasonal MA)", 0, 3, 0, key="t1_Q")
-                with scol4: s = st.selectbox("Seasonality Cycle (s)", [5, 12, 21], key="t1_s")
-
-            if model_type_stat == "Exponential Smoothing (ETS)":
-                ecol1, ecol2, ecol3 = st.columns(3)
-                with ecol1: trend = st.selectbox("Trend Type", ["add", "mul", None], index=0)
-                with ecol2: seasonal = st.selectbox("Seasonal Type", ["add", "mul", None], index=0)
-                with ecol3: seasonal_periods = st.slider("Seasonal Periods", 2, 30, 5)
-
-            if st.button(f"Run {model_type_stat} Model"):
-                with st.spinner(f"Fitting {model_type_stat} model..."):
-                    try:
-                        skip_days = 30 if len(df_train_values) > 60 else 0 
-
-                        if model_type_stat == "ARIMA":
-                            model = ARIMA(df_train_values, order=(p, d, q))
-                            fitted_model = model.fit()
-                            forecast = fitted_model.forecast(steps=days_to_predict)
-                            summary_text = fitted_model.summary().as_text()
-                            rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
-
-                        elif model_type_stat == "SARIMA (Seasonal)":
-                            model = SARIMAX(df_train_values, order=(p, d, q), seasonal_order=(P, D, Q, s))
-                            fitted_model = model.fit(disp=False)
-                            forecast = fitted_model.forecast(steps=days_to_predict)
-                            summary_text = fitted_model.summary().as_text()
-                            rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
-
-                        elif model_type_stat == "Exponential Smoothing (ETS)":
-                            model = ExponentialSmoothing(df_train_values, trend=trend, seasonal=seasonal, seasonal_periods=seasonal_periods)
-                            fitted_model = model.fit()
-                            forecast = fitted_model.forecast(days_to_predict)
-                            summary_text = "Note: Exponential smoothing calculates a visual fit and does not generate standard P-value summary tables."
-                            rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
-
-                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4), help="Root Mean Square Error. Lower is better!")
-
-                        last_date = df['Date'].iloc[-1]
-                        future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
-                        
-                        fig_stat = go.Figure()
-                        fig_stat.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Recent Actual", line=dict(color='blue')))
-                        fig_stat.add_trace(go.Scatter(x=future_dates, y=forecast, name=f"{model_type_stat} Forecast", line=dict(color='red', width=3, dash='dot')))
-                        fig_stat.layout.update(title_text=f'{days_to_predict}-Day Forecast ({model_type_stat})')
-                        st.plotly_chart(fig_stat, use_container_width=True)
-                        
-                        with st.expander("View Statistical Model Summary"):
-                            st.text(summary_text)
-                    except Exception as e:
-                        st.error("Model failed to converge. Try adjusting parameters.")
-
-        # ==========================================
-        # TAB 2: MACHINE LEARNING & PROPHET
-        # ==========================================
-        with tab2:
-            st.subheader("Modern Algorithmic Forecasting")
-            model_type_ml = st.selectbox("Choose Algorithmic Model", ["Facebook Prophet", "Machine Learning (Random Forest)"])
-            
-            if st.button(f"Run {model_type_ml} Model"):
-                with st.spinner(f"Running {model_type_ml}..."):
-                    if model_type_ml == "Facebook Prophet":
-                        df_prophet = df[['Date', 'Close']].rename(columns={"Date": "ds", "Close": "y"})
-                        m = Prophet(daily_seasonality=True)
-                        m.fit(df_prophet)
+    # ==========================================
+    # TAB 1: FORECASTING (Combined Stats & ML for neatness)
+    # ==========================================
+    with tab1:
+        st.subheader("Time-Series Forecasting")
+        model_choice = st.selectbox("Choose Engine", ["Prophet (Algorithmic)", "ARIMA (Statistical)", "Random Forest (ML)"])
+        
+        if st.button("Run Forecast Engine"):
+            with st.spinner(f"Running {model_choice}..."):
+                try:
+                    last_date = df['Date'].iloc[-1]
+                    future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
+                    df_train = df['Close'].dropna().values
+                    
+                    if model_choice == "Prophet (Algorithmic)":
+                        df_p = df[['Date', 'Close']].rename(columns={"Date": "ds", "Close": "y"})
+                        m = Prophet()
+                        m.fit(df_p)
                         future = m.make_future_dataframe(periods=days_to_predict)
-                        prophet_forecast = m.predict(future)
+                        forecast = m.predict(future)['yhat'].tail(days_to_predict).values
+                        rmse = np.sqrt(mean_squared_error(df_p['y'], m.predict(df_p)['yhat']))
                         
-                        historical_predictions = prophet_forecast['yhat'][:len(df_prophet)]
-                        rmse = np.sqrt(mean_squared_error(df_prophet['y'], historical_predictions))
-                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4))
+                    elif model_choice == "ARIMA (Statistical)":
+                        model = ARIMA(df_train, order=(5,1,0))
+                        fitted = model.fit()
+                        forecast = fitted.forecast(steps=days_to_predict)
+                        rmse = np.sqrt(mean_squared_error(df_train[30:], fitted.fittedvalues[30:]))
                         
-                        fig_proph = go.Figure()
-                        fig_proph.add_trace(go.Scatter(x=df_prophet['ds'].tail(150), y=df_prophet['y'].tail(150), name="Actual", line=dict(color='blue')))
-                        future_only = prophet_forecast.tail(days_to_predict)
-                        fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat'], name="Predicted", line=dict(color='orange', width=3, dash='dot')))
-                        fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_upper'], fill=None, mode='lines', line_color='rgba(0,0,0,0)', showlegend=False))
-                        fig_proph.add_trace(go.Scatter(x=future_only['ds'], y=future_only['yhat_lower'], fill='tonexty', mode='lines', line_color='rgba(0,0,0,0)', fillcolor='rgba(255, 165, 0, 0.2)'))
-                        fig_proph.layout.update(title_text=f'Prophet Forecast for {ticker}')
-                        st.plotly_chart(fig_proph, use_container_width=True)
-
-                    elif model_type_ml == "Machine Learning (Random Forest)":
-                        df_rf = df[['Date', 'Close']].copy()
-                        df_rf.dropna(subset=['Close'], inplace=True)
+                    elif model_choice == "Random Forest (ML)":
+                        df_rf = df[['Date', 'Close']].dropna().copy()
                         df_rf['Day'] = df_rf['Date'].dt.day
                         df_rf['Month'] = df_rf['Date'].dt.month
                         df_rf['Year'] = df_rf['Date'].dt.year
-                        df_rf['DayOfWeek'] = df_rf['Date'].dt.dayofweek
-                        
-                        X = df_rf[['Day', 'Month', 'Year', 'DayOfWeek']]
+                        X = df_rf[['Day', 'Month', 'Year']]
                         y = df_rf['Close']
+                        rf = RandomForestRegressor(n_estimators=100, random_state=42).fit(X, y)
                         
-                        rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-                        rf_model.fit(X, y)
-                        
-                        historical_predictions = rf_model.predict(X)
-                        rmse = np.sqrt(mean_squared_error(y, historical_predictions))
-                        st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4))
-                        
-                        last_date = df['Date'].iloc[-1]
-                        future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
                         future_df = pd.DataFrame({'Date': future_dates})
                         future_df['Day'] = future_df['Date'].dt.day
                         future_df['Month'] = future_df['Date'].dt.month
                         future_df['Year'] = future_df['Date'].dt.year
-                        future_df['DayOfWeek'] = future_df['Date'].dt.dayofweek
-                        
-                        rf_forecast = rf_model.predict(future_df[['Day', 'Month', 'Year', 'DayOfWeek']])
-                        
-                        fig_rf = go.Figure()
-                        fig_rf.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Recent Actual", line=dict(color='blue')))
-                        fig_rf.add_trace(go.Scatter(x=future_dates, y=rf_forecast, name="Predicted", line=dict(color='green', width=3, dash='dot')))
-                        fig_rf.layout.update(title_text=f'Random Forest Forecast for {ticker}')
-                        st.plotly_chart(fig_rf, use_container_width=True)
-                        
-                with st.expander("Why is there no Model Summary here?"):
-                    st.info("Machine Learning algorithms do not calculate standard statistical p-values. There is no summary table to display.")
+                        forecast = rf.predict(future_df[['Day', 'Month', 'Year']])
+                        rmse = np.sqrt(mean_squared_error(y, rf.predict(X)))
 
-        # ==========================================
-        # TAB 3: MACROECONOMIC SARIMAX
-        # ==========================================
-        with tab3:
-            st.subheader("Multivariate SARIMAX (with Exogenous Variables)")
-            st.markdown("Predict your target asset by mathematically factoring in the live movements of a macroeconomic indicator.")
-            
-            macro_dict = {
-                "10-Year US Treasury Yield (^TNX)": "^TNX",
-                "US Dollar Index (DX-Y.NYB)": "DX-Y.NYB",
-                "Crude Oil (CL=F)": "CL=F"
-            }
-            # REMOVED on_change clear_state triggers here!
-            macro_choice = st.selectbox("Select Macroeconomic Indicator (Exogenous Variable)", list(macro_dict.keys()))
-            macro_ticker = macro_dict[macro_choice]
-
-            st.markdown("##### Target Asset SARIMAX Parameters")
-            mcol1, mcol2, mcol3 = st.columns(3)
-            # REMOVED on_change clear_state triggers here!
-            with mcol1: mp = st.slider("p (AutoRegressive)", 0, 10, 5, key="t3_p")
-            with mcol2: md = st.slider("d (Differencing)", 0, 2, 1, key="t3_d")
-            with mcol3: mq = st.slider("q (Moving Average)", 0, 10, 0, key="t3_q")
-
-            if st.button("Run Macro SARIMAX Model"):
-                with st.spinner(f"Fetching data and aligning dates..."):
-                    macro_df = load_data(macro_ticker, start_date, end_date)
+                    st.metric(label=f"Historical RMSE Grade", value=round(rmse, 4))
                     
-                    if macro_df.empty:
-                        st.error(f"Could not fetch data for {macro_ticker}.")
-                    else:
-                        merged_df = pd.merge(df[['Date', 'Close']], macro_df[['Date', 'Close']], on='Date', suffixes=('_Target', '_Macro'))
-                        merged_df.dropna(inplace=True)
+                    fig_fc = go.Figure()
+                    fig_fc.add_trace(go.Scatter(x=df['Date'].tail(150), y=df['Close'].tail(150), name="Actual"))
+                    fig_fc.add_trace(go.Scatter(x=future_dates, y=forecast, name="Predicted", line=dict(dash='dot', width=3)))
+                    st.plotly_chart(fig_fc, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-                        if merged_df.empty:
-                            st.error("Data alignment failed. The target and macro indicator do not share enough trading days.")
-                        else:
-                            endog = merged_df['Close_Target'].values
-                            exog = merged_df['Close_Macro'].values
-
-                            try:
-                                macro_model = SARIMAX(endog, exog=exog, order=(mp, md, mq))
-                                macro_fitted = macro_model.fit(disp=False)
-                                
-                                future_exog = np.repeat(exog[-1], days_to_predict)
-                                macro_forecast = macro_fitted.forecast(steps=days_to_predict, exog=future_exog)
-                                
-                                skip_days = 30 if len(endog) > 60 else 0
-                                rmse = np.sqrt(mean_squared_error(endog[skip_days:], macro_fitted.fittedvalues[skip_days:]))
-
-                                last_date = merged_df['Date'].iloc[-1]
-                                future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
-
-                                # 1. Create Chart
-                                fig_macro = go.Figure()
-                                fig_macro.add_trace(go.Scatter(x=merged_df['Date'].tail(150), y=merged_df['Close_Target'].tail(150), name="Target Actual", line=dict(color='blue')))
-                                fig_macro.add_trace(go.Scatter(x=future_dates, y=macro_forecast, name="Macro SARIMAX Forecast", line=dict(color='purple', width=3, dash='dot')))
-                                fig_macro.layout.update(title_text=f'{days_to_predict}-Day Target Forecast (Driven by {macro_ticker})')
-
-                                # 2. Generate CSV Bytes
-                                forecast_df = pd.DataFrame({'Date': future_dates, 'Predicted_Target_Price': macro_forecast, 'Exogenous_Variable_Assumption': future_exog})
-                                csv_data = forecast_df.to_csv(index=False).encode('utf-8')
-                                
-                                # 3. Generate PDF Bytes
-                                summary_text = macro_fitted.summary().as_text()
-                                pdf = FPDF()
-                                pdf.add_page()
-                                pdf.set_font("Courier", size=8)
-                                for line in summary_text.split('\n'):
-                                    clean_line = line.encode('latin-1', 'replace').decode('latin-1')
-                                    pdf.cell(0, 4, txt=clean_line, ln=1)
-                                    
-                                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                                    pdf.output(tmp.name)
-                                    with open(tmp.name, "rb") as f:
-                                        pdf_bytes = f.read()
-
-                                # SAVE TO SESSION STATE
-                                st.session_state.macro_results = {
-                                    'fig': fig_macro,
-                                    'csv': csv_data,
-                                    'pdf': pdf_bytes,
-                                    'summary': summary_text,
-                                    'rmse': rmse,
-                                    'ticker': ticker # Save ticker to prevent cross-contamination
-                                }
-                                    
-                            except Exception as e:
-                                st.error("SARIMAX failed to converge. Try adjusting the sliders.")
-
-            # Display the UI using data firmly locked in session_state
-            if st.session_state.macro_results is not None:
-                res = st.session_state.macro_results
+    # ==========================================
+    # TAB 2: MACRO SCANNER
+    # ==========================================
+    with tab2:
+        st.subheader("Global Macroeconomic Correlation")
+        st.markdown("Scan the market to see what outside forces are driving your target asset right now.")
+        
+        if st.button("Generate Correlation Heatmap"):
+            with st.spinner("Scanning Global Markets..."):
+                # Download main drivers
+                assets = {
+                    "Target Asset": ticker, 
+                    "US Dollar": "DX-Y.NYB", 
+                    "Gold": "GC=F", 
+                    "Crude Oil": "CL=F", 
+                    "10Y Yield": "^TNX", 
+                    "S&P 500": "^GSPC"
+                }
+                corr_df = pd.DataFrame()
                 
-                # Only display if the user hasn't completely changed the ticker in the sidebar
-                if res.get('ticker') == ticker:
-                    st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(res['rmse'], 4), help="Root Mean Square Error. Lower is better!")
-                    st.plotly_chart(res['fig'], use_container_width=True)
+                for name, symbol in assets.items():
+                    tmp_df = yf.download(symbol, start=start_date, end=end_date, progress=False)
+                    if not tmp_df.empty and 'Close' in tmp_df:
+                        # Handle MultiIndex column drop for yfinance
+                        close_col = tmp_df['Close'].iloc[:, 0] if isinstance(tmp_df['Close'], pd.DataFrame) else tmp_df['Close']
+                        corr_df[name] = close_col
+                        
+                corrs = corr_df.corr()
+                fig_corr = go.Figure(data=go.Heatmap(z=corrs.values, x=corrs.columns, y=corrs.columns, colorscale='RdBu', zmin=-1, zmax=1))
+                fig_corr.update_layout(title="Asset Correlation Matrix (-1 to +1)")
+                
+                st.session_state.corr_data = fig_corr
+                
+        if st.session_state.corr_data:
+            st.plotly_chart(st.session_state.corr_data, use_container_width=True)
+            st.info("💡 **How to read this:** Look at the 'Target Asset' row. Dark Blue (+1) means they move perfectly together. Dark Red (-1) means they move in opposite directions. Use the darkest colored asset as your exogenous variable in a SARIMAX model!")
 
-                    st.markdown("### 📥 Export Your Results")
-                    col_csv, col_pdf = st.columns(2)
-                    
-                    with col_csv:
-                        st.download_button(
-                            label="Download Forecast Data (.csv)",
-                            data=res['csv'],
-                            file_name=f"{ticker}_SARIMAX_Forecast.csv",
-                            mime="text/csv",
-                            help="Download the predicted dates and prices to open in Excel."
-                        )
-                    with col_pdf:
-                        st.download_button(
-                            label="Download Model Summary (.pdf)",
-                            data=res['pdf'],
-                            file_name=f"{ticker}_SARIMAX_Summary.pdf",
-                            mime="application/pdf",
-                            help="Download the dense statistical report containing your AIC scores and P-Values."
-                        )
-                    
-                    with st.expander("View Macro SARIMAX Summary"):
-                        st.text(res['summary'])
+    # ==========================================
+    # TAB 3: PORTFOLIO OPTIMIZER (Quadratic Math)
+    # ==========================================
+    with tab3:
+        st.subheader("⚖️ Modern Portfolio Theory (MPT)")
+        st.markdown("Enter multiple tickers. The algorithm will simulate thousands of combinations to find the allocation that maximizes your returns while minimizing your risk (Max Sharpe Ratio).")
+        
+        multi_tickers = st.text_input("Portfolio Tickers (comma separated)", "AAPL, MSFT, GLD, BTC-USD").upper()
+        
+        if st.button("Optimize Weights"):
+            with st.spinner("Calculating the Efficient Frontier..."):
+                t_list = [x.strip() for x in multi_tickers.split(",")]
+                
+                if len(t_list) < 2:
+                    st.error("You need at least 2 assets to build a portfolio!")
                 else:
-                    st.info("Ticker changed. Click 'Run Macro SARIMAX Model' to generate new data.")
-
-        # ==========================================
-        # TAB 4: MARKET GUIDE
-        # ==========================================
-        with tab4:
-            st.subheader("📖 Guide to Asset Classes & Tickers")
-            st.markdown("Different assets behave completely differently. Understanding *what* drives an asset helps you choose the right forecasting model.")
+                    try:
+                        # 1. Fetch data
+                        port_data = yf.download(t_list, start=start_date, end=end_date)['Close']
+                        port_data.dropna(inplace=True)
+                        
+                        # 2. Calculate Returns & Covariance
+                        returns = port_data.pct_change().dropna()
+                        mean_returns = returns.mean() * 252  # Annualized
+                        cov_matrix = returns.cov() * 252     # Annualized
+                        risk_free_rate = 0.04                # 4% safe yield
+                        
+                        # 3. Optimization Functions
+                        def portfolio_performance(weights, mean_returns, cov_matrix, risk_free_rate):
+                            p_ret = np.sum(mean_returns * weights)
+                            p_vol = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+                            p_sharpe = (p_ret - risk_free_rate) / p_vol
+                            return p_ret, p_vol, p_sharpe
+                            
+                        def negative_sharpe(weights, mean_returns, cov_matrix, risk_free_rate):
+                            p_ret, p_vol, p_sharpe = portfolio_performance(weights, mean_returns, cov_matrix, risk_free_rate)
+                            return -p_sharpe # Scipy minimizes, so we minimize the negative Sharpe
+                            
+                        # 4. Scipy Constraints & Bounds
+                        num_assets = len(t_list)
+                        args = (mean_returns, cov_matrix, risk_free_rate)
+                        constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1}) # Weights must = 100%
+                        bounds = tuple((0.0, 1.0) for asset in range(num_assets))      # No short selling
+                        initial_guess = num_assets * [1. / num_assets,]                # Start with equal weight
+                        
+                        # 5. Execute SLSQP Optimizer
+                        optimized = sco.minimize(negative_sharpe, initial_guess, args=args, method='SLSQP', bounds=bounds, constraints=constraints)
+                        
+                        if optimized.success:
+                            opt_weights = optimized.x
+                            p_ret, p_vol, p_sharpe = portfolio_performance(opt_weights, mean_returns, cov_matrix, risk_free_rate)
+                            
+                            # 6. Save to session state
+                            st.session_state.port_results = {
+                                'weights': opt_weights, 'ret': p_ret, 'vol': p_vol, 'sharpe': p_sharpe, 'tickers': list(port_data.columns)
+                            }
+                        else:
+                            st.error("Mathematical Optimization Failed. Try different dates or assets.")
+                            
+                    except Exception as e:
+                        st.error(f"Error fetching data or calculating matrices: {e}")
+        
+        # Display the locked session state
+        if st.session_state.port_results is not None:
+            res = st.session_state.port_results
             
-            st.markdown("### 🏢 Stocks & Equities")
-            st.markdown("""
-            * **What drives them:** Company earnings reports, CEO changes, product launches, and general stock market sentiment.
-            * **Best Models:** ARIMA for short-term momentum; Random Forest and Prophet for baseline trend identification. 
-            * **Example Tickers:** `AAPL` (Apple), `TSLA` (Tesla), `SPY` (S&P 500 Index)
-            """)
-
-            st.markdown("### 💱 Currencies (Forex)")
-            st.markdown("""
-            * **What drives them:** Global macroeconomics. Interest rate hikes by central banks (like the US Fed), inflation rates, and international trade balances.
-            * **Best Models:** **Macro SARIMAX** (using interest rates as exogenous variables).
-            * **Example Tickers (Must end in =X):** `EURUSD=X` (Euro/US Dollar), `JPY=X` (Yen/US Dollar)
-            """)
-
-            st.markdown("### 🪙 Cryptocurrencies")
-            st.markdown("""
-            * **What drives them:** Network adoption, retail sentiment, regulatory news, and global liquidity (interest rates). They trade 24/7, meaning there are no weekend data gaps.
-            * **Best Models:** **Facebook Prophet** is excellent at catching the 24/7 weekly seasonality of retail crypto traders. **Macro SARIMAX** is also powerful if you use the US Dollar Index or the NASDAQ as an outside variable, as Bitcoin often reacts to macro liquidity.
-            * **Example Tickers (Must end in -USD):** `BTC-USD` (Bitcoin), `ETH-USD` (Ethereum), `SOL-USD` (Solana)
-            """)
-
-            st.markdown("### 🛢️ Commodities & Precious Metals")
-            st.markdown("""
-            * **What drives them:** Physical supply/demand, geopolitical crises, and inverse correlations to the US Dollar.
-            * **Best Models:** **Macro SARIMAX** is exceptional here. Try predicting Gold while feeding the model the US Treasury Yield as an outside factor.
-            * **Example Tickers:** `GC=F` (Gold Futures), `SI=F` (Silver Futures), `CL=F` (Crude Oil)
-            """)
+            st.success("✅ **Optimization Successful!** Here is your mathematically perfect portfolio:")
             
-            st.markdown("### 📊 Market Indices & Real Estate (REITs)")
-            st.markdown("""
-            * **What drives them:** Broad macroeconomic health, collective corporate earnings, and interest rates (especially for Real Estate). 
-            * **Best Models:** **Prophet** for long-term baseline trends of Indices. **Macro SARIMAX** for REITs, using the 10-Year Treasury Yield (`^TNX`) as an outside variable since real estate is highly sensitive to borrowing costs.
-            * **Example Tickers:** `^GSPC` (S&P 500 Index), `^IXIC` (NASDAQ), `VNQ` (Vanguard Real Estate ETF)
-            """)
+            # Key Metrics
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Expected Annual Return", f"{res['ret']*100:.2f}%")
+            m2.metric("Portfolio Volatility (Risk)", f"{res['vol']*100:.2f}%")
+            m3.metric("Sharpe Ratio", f"{res['sharpe']:.2f}")
+            
+            # Allocation Display
+            st.markdown("#### Optimal Capital Allocation")
+            weight_cols = st.columns(len(res['tickers']))
+            for i, t in enumerate(res['tickers']):
+                weight_cols[i].metric(t, f"{res['weights'][i]*100:.1f}%")
+                
+            # Plotly Donut Chart
+            fig_pie = go.Figure(data=[go.Pie(labels=res['tickers'], values=res['weights'], hole=.4, hoverinfo="label+percent")])
+            fig_pie.update_layout(title_text="Max Sharpe Ratio Portfolio Weights")
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+    # ==========================================
+    # TAB 4: GUIDE
+    # ==========================================
+    with tab4:
+        st.markdown("### 📖 Terminal Operations Guide")
+        st.markdown("""
+        **1. Technical Analysis (Top Chart):** Use the sidebar to toggle SMA (trend direction) and RSI (overbought/oversold levels).
+        
+        **2. Forecasting Models (Tab 1):** * **ARIMA:** Best for short-term statistical momentum.
+        * **Random Forest:** Machine Learning model that looks for calendar-based repeating patterns.
+        * **Prophet:** Best for long-term algorithmic trend identification.
+        
+        **3. Macro Scanner (Tab 2):** Run the heatmap to see what global drivers correlate with your asset. If your asset is dark red against the US Dollar, it means your asset crashes when the Dollar rises.
+        
+        **4. Portfolio Optimizer (Tab 3):** Input a mix of uncorrelated assets (e.g., a tech stock, gold, and crypto). The quadratic optimizer will find the exact percentage to hold of each to squeeze out the highest return for the lowest mathematical risk.
+        """)
