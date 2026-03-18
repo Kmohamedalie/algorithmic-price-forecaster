@@ -2,6 +2,40 @@
 
 This document outlines the statistical theories, mathematical formulas, and quantitative intuition powering the core analytical modules of the Multi-Asset Quantitative Strategy Terminal.
 
+
+## The Main Dashboard: Technical Analysis Overlays
+Before running complex forecasts, the terminal visualizes the current state of the asset using two fundamental quantitative indicators: Simple Moving Averages (SMA) and the Relative Strength Index (RSI).
+
+
+### 1. Simple Moving Average (SMA)
+The SMA strips away daily market noise (volatility) to reveal the underlying mathematical trend. It calculates the unweighted arithmetic mean of the asset's closing prices over a specified number of days ($n$).
+
+**The Equation:**
+$$SMA_n=\frac{1}{n}\sum_{i=0}^{n-1}P_{t-i}$$
+*(Where P is the closing price at a given day, and n is the rolling window).*
+
+*Intuition:* Our terminal plots the **50-day** (fast) and **200-day** (slow) SMAs. 
+* When the current price is above the 200-day SMA, the asset is mathematically in a macro bull market. 
+* When the 50-day SMA crosses *above* the 200-day SMA, it triggers a "Golden Cross," signaling a major upward momentum shift.
+
+### 2. Relative Strength Index (RSI)
+
+Developed by J. Welles Wilder, the RSI is a momentum oscillator that measures the speed and magnitude of recent price changes. It translates absolute price drops and gains into a normalized index scaled from 0 to 100.
+
+**The Equations:**
+First, we calculate the Relative Strength ($RS$):
+$$RS=\frac{\text{Average Gain over } n \text{ periods}}{\text{Average Loss over } n \text{ periods}}$$
+Then, we normalize it into the RSI:
+$$RSI=100-\frac{100}{1+RS}$$
+
+*Intuition:* The terminal calculates a standard 14-day RSI ($n=14$) and plots warning lines at the **70** and **30** levels.
+* **RSI > 70 (Overbought):** The asset has gone up too fast, mathematically outpacing its historical average gains. A statistical pullback or correction is highly probable.
+* **RSI < 30 (Oversold):** The asset has been heavily sold off, mathematically outpacing historical losses. It is statistically "cheap" and primed for a bounce.
+
+
+
+
+
 ## Tab 1: Classic Statistical Forecasting (ARIMA & ETS)
 This tab relies on traditional time-series mathematics, which assumes that the future is a mathematical function of the past.
 
