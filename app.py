@@ -364,6 +364,13 @@ else:
             * **Example Tickers (Must end in -USD):** `BTC-USD` (Bitcoin), `ETH-USD` (Ethereum), `SOL-USD` (Solana)
             """)
 
+            st.markdown("### 📊 Market Indices & Real Estate (REITs)")
+            st.markdown("""
+            * **What drives them:** Broad macroeconomic health, collective corporate earnings, and interest rates (especially for Real Estate). 
+            * **Best Models:** **Prophet** for long-term baseline trends of Indices. **Macro SARIMAX** for REITs, using the 10-Year Treasury Yield (`^TNX`) as an outside variable since real estate is highly sensitive to borrowing costs.
+            * **Example Tickers:** `^GSPC` (S&P 500 Index), `^IXIC` (NASDAQ), `VNQ` (Vanguard Real Estate ETF)
+            """)
+
             st.markdown("### 🛢️ Commodities & Precious Metals")
             st.markdown("""
             * **What drives them:** Physical supply/demand, geopolitical crises, and inverse correlations to the US Dollar.
