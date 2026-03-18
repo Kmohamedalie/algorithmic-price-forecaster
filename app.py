@@ -17,16 +17,11 @@ import tempfile
 
 # Ignore statistical convergence warnings in the UI
 warnings.filterwarnings("ignore")
+
 # --- UI SETUP ---
-# This changes the name in the user's web browser tab
-st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide") 
-
-# This changes the big bold text at the top of the app
-st.title("📈 The Multi-Asset Quantitative Terminal") 
-
-# This changes the subtitle description underneath it
-st.markdown("Forecast Stocks, Forex, Crypto, Bonds, and Commodities using Advanced Statistics and Machine Learning.") 
-
+st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide")
+st.title("📈 The Multi-Asset Quantitative Terminal")
+st.markdown("Forecast Stocks, Forex, Crypto, Bonds, Real Estate, and Commodities using Advanced Statistics and Machine Learning.")
 
 # Initialize Session State for the Macro model so data survives button clicks
 if 'macro_results' not in st.session_state:
@@ -35,7 +30,7 @@ if 'macro_results' not in st.session_state:
 # --- SIDEBAR (Global Settings) ---
 st.sidebar.header("Global Data Configuration")
 
-raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X, BTC-USD)", "AAPL").upper()
+raw_ticker_input = st.sidebar.text_input("Target Ticker (e.g., AAPL, EURUSD=X, BTC-USD, VNQ)", "AAPL").upper()
 ticker = re.split(r'[,\s]+', raw_ticker_input)[0].strip()
 
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*3))
@@ -69,7 +64,7 @@ else:
         df = load_data(ticker, start_date, end_date)
     
     if df.empty:
-        st.error(f"No data found for {ticker} in this date range.")
+        st.error(f"No data found for {ticker} in this date range. Check the ticker symbol.")
     else:
         fig_raw = go.Figure()
         fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="Historical Close"))
@@ -118,27 +113,29 @@ else:
             if st.button(f"Run {model_type_stat} Model"):
                 with st.spinner(f"Fitting {model_type_stat} model..."):
                     try:
+                        # Safety check for RMSE calculation length
+                        skip_days = 30 if len(df_train_values) > 60 else 0 
+
                         if model_type_stat == "ARIMA":
                             model = ARIMA(df_train_values, order=(p, d, q))
                             fitted_model = model.fit()
                             forecast = fitted_model.forecast(steps=days_to_predict)
                             summary_text = fitted_model.summary().as_text()
-                            # Calculate RMSE (Skipping first 30 days to avoid startup noise)
-                            rmse = np.sqrt(mean_squared_error(df_train_values[30:], fitted_model.fittedvalues[30:]))
+                            rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
 
                         elif model_type_stat == "SARIMA (Seasonal)":
                             model = SARIMAX(df_train_values, order=(p, d, q), seasonal_order=(P, D, Q, s))
                             fitted_model = model.fit(disp=False)
                             forecast = fitted_model.forecast(steps=days_to_predict)
                             summary_text = fitted_model.summary().as_text()
-                            rmse = np.sqrt(mean_squared_error(df_train_values[30:], fitted_model.fittedvalues[30:]))
+                            rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
 
                         elif model_type_stat == "Exponential Smoothing (ETS)":
                             model = ExponentialSmoothing(df_train_values, trend=trend, seasonal=seasonal, seasonal_periods=seasonal_periods)
                             fitted_model = model.fit()
                             forecast = fitted_model.forecast(days_to_predict)
                             summary_text = "Note: Exponential smoothing calculates a visual fit and does not generate standard P-value summary tables."
-                            rmse = np.sqrt(mean_squared_error(df_train_values[30:], fitted_model.fittedvalues[30:]))
+                            rmse = np.sqrt(mean_squared_error(df_train_values[skip_days:], fitted_model.fittedvalues[skip_days:]))
 
                         # Display RMSE Metric
                         st.metric(label=f"Historical Accuracy Grade (RMSE)", value=round(rmse, 4), help="Root Mean Square Error. Lower is better! This shows how far off the model was on average during the historical training data.")
@@ -270,7 +267,8 @@ else:
                                 macro_forecast = macro_fitted.forecast(steps=days_to_predict, exog=future_exog)
                                 
                                 # Calculate RMSE (Skipping first 30 days)
-                                rmse = np.sqrt(mean_squared_error(endog[30:], macro_fitted.fittedvalues[30:]))
+                                skip_days = 30 if len(endog) > 60 else 0
+                                rmse = np.sqrt(mean_squared_error(endog[skip_days:], macro_fitted.fittedvalues[skip_days:]))
 
                                 last_date = merged_df['Date'].iloc[-1]
                                 future_dates = [last_date + timedelta(days=i) for i in range(1, days_to_predict + 1)]
@@ -369,16 +367,16 @@ else:
             * **Example Tickers (Must end in -USD):** `BTC-USD` (Bitcoin), `ETH-USD` (Ethereum), `SOL-USD` (Solana)
             """)
 
-            st.markdown("### 📊 Market Indices & Real Estate (REITs)")
-            st.markdown("""
-            * **What drives them:** Broad macroeconomic health, collective corporate earnings, and interest rates (especially for Real Estate). 
-            * **Best Models:** **Prophet** for long-term baseline trends of Indices. **Macro SARIMAX** for REITs, using the 10-Year Treasury Yield (`^TNX`) as an outside variable since real estate is highly sensitive to borrowing costs.
-            * **Example Tickers:** `^GSPC` (S&P 500 Index), `^IXIC` (NASDAQ), `VNQ` (Vanguard Real Estate ETF)
-            """)
-
             st.markdown("### 🛢️ Commodities & Precious Metals")
             st.markdown("""
             * **What drives them:** Physical supply/demand, geopolitical crises, and inverse correlations to the US Dollar.
             * **Best Models:** **Macro SARIMAX** is exceptional here. Try predicting Gold while feeding the model the US Treasury Yield as an outside factor.
             * **Example Tickers:** `GC=F` (Gold Futures), `SI=F` (Silver Futures), `CL=F` (Crude Oil)
+            """)
+            
+            st.markdown("### 📊 Market Indices & Real Estate (REITs)")
+            st.markdown("""
+            * **What drives them:** Broad macroeconomic health, collective corporate earnings, and interest rates (especially for Real Estate). 
+            * **Best Models:** **Prophet** for long-term baseline trends of Indices. **Macro SARIMAX** for REITs, using the 10-Year Treasury Yield (`^TNX`) as an outside variable since real estate is highly sensitive to borrowing costs.
+            * **Example Tickers:** `^GSPC` (S&P 500 Index), `^IXIC` (NASDAQ), `VNQ` (Vanguard Real Estate ETF)
             """)
