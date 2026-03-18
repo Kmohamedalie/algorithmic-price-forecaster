@@ -1,7 +1,10 @@
 # 📈 Multi-Asset Quantitative Strategy Terminal
 
+> **🧠 Deep Dive:** Want to understand the calculus and statistics powering this engine? **[Read the full Quantitative Math Guide here](QUANT_MATH_GUIDE.md)**.
+
 ## Overview
 The Multi-Asset Quantitative Strategy Terminal is an advanced, Python-based web application designed for comprehensive financial analysis, time-series forecasting, and portfolio optimization. Built with Streamlit, this tool bridges the gap between traditional technical analysis and institutional-grade quantitative modeling. It allows users to forecast stocks, currencies, cryptocurrencies, market indices, and commodities using classic statistics, machine learning, and macroeconomic drivers.
+
 
 ⚠️ Disclaimer: This application is for educational and research purposes only. It is not financial advice. The forecasting models and portfolio optimizations are based on historical data, and past performance does not guarantee future results. Do your own research or consult a certified financial advisor before making investment decisions. The creator of this software assumes no liability for any financial losses.
 
