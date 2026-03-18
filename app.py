@@ -27,10 +27,11 @@ st.title("📈 Multi-Asset Quantitative Strategy Terminal")
 if 'macro_results' not in st.session_state: st.session_state.macro_results = None
 if 'corr_data' not in st.session_state: st.session_state.corr_data = None
 if 'port_results' not in st.session_state: st.session_state.port_results = None
+if 'algo_results' not in st.session_state: st.session_state.algo_results = None
 
 # --- SIDEBAR ---
 st.sidebar.header("Global Configuration")
-raw_ticker_input = st.sidebar.text_input("Target Ticker (For Tabs 1-4)", "AAPL").upper()
+raw_ticker_input = st.sidebar.text_input("Target Ticker (For Tabs 1-4 & 6)", "AAPL").upper()
 ticker = re.split(r'[,\s]+', raw_ticker_input)[0].strip()
 
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=365*3))
@@ -47,6 +48,7 @@ if st.sidebar.button("🧹 Clear Saved Data"):
     st.session_state.macro_results = None
     st.session_state.corr_data = None
     st.session_state.port_results = None
+    st.session_state.algo_results = None
 
 # --- DATA ENGINE ---
 @st.cache_data(ttl=3600)
@@ -93,17 +95,18 @@ if not df.empty:
     st.plotly_chart(fig, use_container_width=True)
 
     # --- TABS ---
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Statistical", 
         "🤖 ML & Prophet", 
         "🌍 Macro SARIMAX", 
         "🔍 Macro Scanner", 
-        "⚖️ Portfolio Optimizer", 
+        "⚖️ Portfolio Optimizer",
+        "📈 Algo Trading",
         "📖 Guide"
     ])
 
     # ==========================================
-    # TAB 1: STATISTICAL MODELS (Restored Tuning)
+    # TAB 1: STATISTICAL MODELS
     # ==========================================
     with tab1:
         st.subheader("Classic Statistical Forecasting")
@@ -218,7 +221,7 @@ if not df.empty:
                     st.plotly_chart(fig_rf, use_container_width=True)
 
     # ==========================================
-    # TAB 3: MACROECONOMIC SARIMAX (Restored PDF/CSV/Sliders)
+    # TAB 3: MACROECONOMIC SARIMAX 
     # ==========================================
     with tab3:
         st.subheader("Multivariate SARIMAX (with Exogenous Variables)")
@@ -325,28 +328,22 @@ if not df.empty:
             st.plotly_chart(st.session_state.corr_data, use_container_width=True)
             st.info("💡 **How to read this:** Use the darkest colored asset (closest to +1 or -1) as your exogenous variable in Tab 3!")
 
-
     # ==========================================
-    # TAB 5: PORTFOLIO OPTIMIZER (Upgraded Time Horizon)
+    # TAB 5: PORTFOLIO OPTIMIZER
     # ==========================================
     with tab5:
         st.subheader("⚖️ Modern Portfolio Theory (MPT)")
-        
-        # New dedicated inputs just for the optimizer
         multi_tickers = st.text_input("Portfolio Tickers (comma separated)", "VTI, TLT, IEF, GLD, DBC").upper()
-        port_years = st.slider("Optimization Lookback Period (Years)", 1, 30, 10, help="Test how these assets would have balanced each other over decades, independent of your short-term forecasting dates.")
+        port_years = st.slider("Optimization Lookback Period (Years)", 1, 30, 10)
         
         if st.button("Optimize Weights"):
-            with st.spinner(f"Calculating the Efficient Frontier over the last {port_years} years..."):
+            with st.spinner(f"Calculating the Efficient Frontier over {port_years} years..."):
                 t_list = [x.strip() for x in multi_tickers.split(",")]
                 if len(t_list) < 2:
                     st.error("You need at least 2 assets to build a portfolio!")
                 else:
                     try:
-                        # Calculate the custom deep-history start date
                         port_start_date = date.today() - timedelta(days=365 * port_years)
-                        
-                        # Download using the custom deep-history date
                         port_data = yf.download(t_list, start=port_start_date, end=end_date)['Close'].dropna()
                         returns = port_data.pct_change().dropna()
                         mean_returns = returns.mean() * 252
@@ -373,7 +370,7 @@ if not df.empty:
                             p_sharpe = (p_ret - risk_free_rate) / p_vol
                             st.session_state.port_results = {'weights': opt_weights, 'ret': p_ret, 'vol': p_vol, 'sharpe': p_sharpe, 'tickers': list(port_data.columns), 'years': port_years}
                         else:
-                            st.error("Optimization Failed. Some assets may not have existed that long ago.")
+                            st.error("Optimization Failed.")
                     except Exception as e:
                         st.error(f"Error: {e}")
         
@@ -388,17 +385,91 @@ if not df.empty:
             fig_pie = go.Figure(data=[go.Pie(labels=res['tickers'], values=res['weights'], hole=.4)])
             st.plotly_chart(fig_pie, use_container_width=True)
 
-    
     # ==========================================
-    # TAB 6: GUIDE
+    # TAB 6: ALGORITHMIC TRADING BACKTESTER
     # ==========================================
     with tab6:
+        st.subheader("📈 Algorithmic Trading (Vectorized Backtest)")
+        st.markdown("Test an automated Moving Average Crossover strategy. The bot buys when the fast moving average crosses above the slow moving average, and sells to cash when it crosses below.")
+        
+        col_algo1, col_algo2 = st.columns(2)
+        with col_algo1: fast_sma = st.slider("Fast SMA Window", 5, 100, 50, help="The short-term trend.")
+        with col_algo2: slow_sma = st.slider("Slow SMA Window", 50, 300, 200, help="The long-term baseline.")
+
+        if st.button("Run Vectorized Backtest"):
+            with st.spinner("Simulating trades..."):
+                algo_df = df.copy()
+                algo_df['Fast_SMA'] = algo_df['Close'].rolling(window=fast_sma).mean()
+                algo_df['Slow_SMA'] = algo_df['Close'].rolling(window=slow_sma).mean()
+                
+                # Drop rows where we don't have enough data to calculate the slow SMA
+                algo_df.dropna(subset=['Fast_SMA', 'Slow_SMA'], inplace=True)
+                
+                # Signal: 1 if Fast > Slow (Buy/Hold), 0 otherwise (Sell/Cash)
+                algo_df['Signal'] = np.where(algo_df['Fast_SMA'] > algo_df['Slow_SMA'], 1, 0)
+                
+                # Shift position to prevent lookahead bias
+                algo_df['Position'] = algo_df['Signal'].shift(1).fillna(0)
+                
+                # Returns
+                algo_df['Market_Return'] = algo_df['Close'].pct_change()
+                algo_df['Strategy_Return'] = algo_df['Market_Return'] * algo_df['Position']
+                
+                # Cumulative Growth
+                algo_df['Market_Growth'] = (1 + algo_df['Market_Return']).cumprod()
+                algo_df['Strategy_Growth'] = (1 + algo_df['Strategy_Return']).cumprod()
+                
+                # Drawdowns (Risk)
+                algo_df['Market_Peak'] = algo_df['Market_Growth'].cummax()
+                algo_df['Market_Drawdown'] = (algo_df['Market_Growth'] - algo_df['Market_Peak']) / algo_df['Market_Peak']
+                
+                algo_df['Strategy_Peak'] = algo_df['Strategy_Growth'].cummax()
+                algo_df['Strategy_Drawdown'] = (algo_df['Strategy_Growth'] - algo_df['Strategy_Peak']) / algo_df['Strategy_Peak']
+                
+                # Final Metrics
+                bnh_return = (algo_df['Market_Growth'].iloc[-1] - 1) * 100 if len(algo_df) > 0 else 0
+                strat_return = (algo_df['Strategy_Growth'].iloc[-1] - 1) * 100 if len(algo_df) > 0 else 0
+                bnh_dd = algo_df['Market_Drawdown'].min() * 100 if len(algo_df) > 0 else 0
+                strat_dd = algo_df['Strategy_Drawdown'].min() * 100 if len(algo_df) > 0 else 0
+                
+                # Plotly Chart
+                fig_algo = go.Figure()
+                fig_algo.add_trace(go.Scatter(x=algo_df['Date'], y=algo_df['Market_Growth'], name="Buy & Hold", line=dict(color='gray')))
+                fig_algo.add_trace(go.Scatter(x=algo_df['Date'], y=algo_df['Strategy_Growth'], name="Bot Strategy", line=dict(color='green', width=2)))
+                fig_algo.update_layout(title="Equity Curve: Strategy vs. Buy & Hold", yaxis_title="Growth Multiple (1.0 = Starting Capital)")
+
+                # Save to session state
+                st.session_state.algo_results = {
+                    'fig': fig_algo, 'strat_ret': strat_return, 'bnh_ret': bnh_return, 
+                    'strat_dd': strat_dd, 'bnh_dd': bnh_dd, 'ticker': ticker
+                }
+
+        # Render from session state
+        if st.session_state.algo_results is not None:
+            res = st.session_state.algo_results
+            if res['ticker'] == ticker:
+                st.success("Backtest Complete!")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Strategy Total Return", f"{res['strat_ret']:.2f}%")
+                c2.metric("Buy & Hold Return", f"{res['bnh_ret']:.2f}%")
+                c3.metric("Strategy Max Drawdown", f"{res['strat_dd']:.2f}%", help="The largest drop from a peak. Lower negative numbers are better!")
+                c4.metric("Market Max Drawdown", f"{res['bnh_dd']:.2f}%")
+                
+                st.plotly_chart(res['fig'], use_container_width=True)
+            else:
+                st.info("Ticker changed. Run the backtest again.")
+
+    # ==========================================
+    # TAB 7: GUIDE
+    # ==========================================
+    with tab7:
         st.markdown("### 📖 Terminal Operations Guide")
         st.markdown("""
-        **1. Technical Analysis (Top Chart):** Use the sidebar to toggle SMA (trend direction) and RSI (overbought/oversold levels).\n
-        **2. Statistical Models (Tab 1):** Tune p, d, and q sliders to test ARIMA and SARIMA combinations. Look for the lowest RMSE.\n
-        **3. ML Models (Tab 2):** Great for baseline, calendar-based trends using Prophet or Random Forest.\n
-        **4. Macro SARIMAX (Tab 3):** The ultimate forecasting tool. Download your CSV/PDFs here!\n
-        **5. Macro Scanner (Tab 4):** Run the heatmap to find which global driver to use in Tab 3.\n
+        **1. Technical Analysis (Top Chart):** Use the sidebar to toggle SMA (trend direction) and RSI (overbought/oversold levels).
+        **2. Statistical Models (Tab 1):** Tune p, d, and q sliders to test ARIMA and SARIMA combinations. Look for the lowest RMSE.
+        **3. ML Models (Tab 2):** Great for baseline, calendar-based trends using Prophet or Random Forest.
+        **4. Macro SARIMAX (Tab 3):** The ultimate forecasting tool. Download your CSV/PDFs here!
+        **5. Macro Scanner (Tab 4):** Run the heatmap to find which global driver to use in Tab 3.
         **6. Portfolio Optimizer (Tab 5):** Input a mix of assets to find the exact percentage to hold of each to maximize return for the lowest mathematical risk.
+        **7. Algo Trading (Tab 6):** Backtest a fully automated Moving Average crossover strategy to see if an algorithm would have beaten a simple "Buy and Hold" approach.
         """)
