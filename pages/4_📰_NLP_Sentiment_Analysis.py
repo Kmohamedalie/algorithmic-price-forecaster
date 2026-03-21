@@ -31,29 +31,28 @@ if st.button("Run NLP Scanner"):
         news_data = stock.news
         
         if not news_data:
-            st.error("No recent news found for this ticker.")
+            st.error(f"No recent news found for {ticker} via Yahoo Finance.")
         else:
             analyzed_news = []
             total_score = 0
             
             # 3. Read and Score Each Headline
             for article in news_data:
-                # yfinance news dict structures can vary, we safely grab the title
-                title = article.get('title', '')
+                # Fallbacks for Yahoo Finance's constantly changing API structure
+                title = article.get('title', article.get('content', dict()).get('title', ''))
                 publisher = article.get('publisher', 'Unknown')
                 link = article.get('link', '#')
                 
-                # Timestamp conversion (yfinance provides unix timestamps)
+                # Timestamp conversion
                 timestamp = article.get('providerPublishTime', 0)
                 date_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M') if timestamp else "Unknown Time"
                 
-                if title:
-                    # The Magic NLP Line: Scores from -1 (Extremely Negative) to +1 (Extremely Positive)
+                # Only analyze if we successfully grabbed a real string of text
+                if isinstance(title, str) and len(title) > 5:
                     sentiment = sia.polarity_scores(title)
                     compound_score = sentiment['compound']
                     total_score += compound_score
                     
-                    # Human-readable label
                     if compound_score >= 0.05:
                         label = "🟢 Bullish"
                     elif compound_score <= -0.05:
@@ -70,44 +69,51 @@ if st.button("Run NLP Scanner"):
                         "Link": link
                     })
             
-            # 4. Calculate the Macro Sentiment
-            avg_sentiment = total_score / len(analyzed_news) if analyzed_news else 0
-            
-            # --- UI RENDERING ---
-            st.subheader(f"Macro Sentiment Score: {ticker}")
-            
-            # Create a professional Gauge Chart
-            
-            fig = go.Figure(go.Indicator(
-                mode = "gauge+number",
-                value = avg_sentiment,
-                domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Average NLP Compound Score"},
-                gauge = {
-                    'axis': {'range': [-1, 1]},
-                    'bar': {'color': "black"},
-                    'steps': [
-                        {'range': [-1, -0.05], 'color': "rgba(255, 0, 0, 0.3)"},   # Bearish Zone
-                        {'range': [-0.05, 0.05], 'color': "rgba(200, 200, 200, 0.3)"}, # Neutral Zone
-                        {'range': [0.05, 1], 'color': "rgba(0, 255, 0, 0.3)"}      # Bullish Zone
-                    ],
-                    'threshold': {
-                        'line': {'color': "black", 'width': 4},
-                        'thickness': 0.75,
-                        'value': avg_sentiment
+            # 🚨 THE HARD STOP: Did we actually parse any text?
+            if len(analyzed_news) == 0:
+                st.warning(f"Yahoo Finance returned data for {ticker}, but the text structure was unreadable by the scanner. Try another ticker like 'NVDA' or 'TSLA'.")
+            else:
+                # 4. Calculate the Macro Sentiment (Only runs if we have data!)
+                avg_sentiment = total_score / len(analyzed_news)
+                
+                # --- UI RENDERING ---
+                st.subheader(f"Macro Sentiment Score: {ticker}")
+                
+                # Create a professional Gauge Chart
+                fig = go.Figure(go.Indicator(
+                    mode = "gauge+number",
+                    value = avg_sentiment,
+                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    title = {'text': "Average NLP Compound Score"},
+                    gauge = {
+                        'axis': {'range': [-1, 1]},
+                        'bar': {'color': "black"},
+                        'steps': [
+                            {'range': [-1, -0.05], 'color': "rgba(255, 0, 0, 0.3)"},   # Bearish Zone
+                            {'range': [-0.05, 0.05], 'color': "rgba(200, 200, 200, 0.3)"}, # Neutral Zone
+                            {'range': [0.05, 1], 'color': "rgba(0, 255, 0, 0.3)"}      # Bullish Zone
+                        ],
+                        'threshold': {
+                            'line': {'color': "black", 'width': 4},
+                            'thickness': 0.75,
+                            'value': avg_sentiment
+                        }
                     }
-                }
-            ))
-            
-            fig.update_layout(height=400, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Display the raw data
-            st.markdown("### 🧠 The Algorithm's Inner Monologue")
-            st.markdown("Here is exactly how the NLP engine scored the latest headlines:")
-            
-            # Convert to DataFrame for a beautiful Streamlit table
-            df_display = pd.DataFrame(analyzed_news)
+                ))
+                
+                fig.update_layout(height=400, margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Display the raw data
+                st.markdown("### 🧠 The Algorithm's Inner Monologue")
+                st.markdown("Here is exactly how the NLP engine scored the latest headlines:")
+                
+                df_display = pd.DataFrame(analyzed_news)
+                st.dataframe(
+                    df_display[['Date', 'Publisher', 'Sentiment', 'Score', 'Headline']],
+                    use_container_width=True,
+                    hide_index=True
+                )
             
             # DEFENSIVE FIX: Check if the dataframe is empty before trying to display it
             if not df_display.empty:
