@@ -23,6 +23,30 @@ warnings.filterwarnings("ignore")
 st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide")
 st.title("📈 Multi-Asset Quantitative Strategy Terminal")
 
+
+# Custom CSS to swap the sidebar toggle icon
+hamburger_css = """
+<style>
+/* Hide the default Streamlit SVG arrow */
+button[data-testid="collapsedControl"] svg,
+button[data-testid="stBaseButton-headerNoPadding"] svg {
+    display: none !important;
+}
+
+/* Insert the universal hamburger icon (☰) */
+button[data-testid="collapsedControl"]::before,
+button[data-testid="stBaseButton-headerNoPadding"]::before {
+    content: "☰";
+    font-size: 24px;
+    font-weight: bold;
+    color: currentColor;
+}
+</style>
+"""
+
+# Inject the CSS into the app
+st.markdown(hamburger_css, unsafe_allow_html=True)
+
 # Initialize Session States (Kept strictly false for auto-clearing)
 if 'macro_results' not in st.session_state: st.session_state.macro_results = None
 if 'corr_data' not in st.session_state: st.session_state.corr_data = None
