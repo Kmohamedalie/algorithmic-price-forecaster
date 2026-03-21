@@ -135,3 +135,43 @@ If SMA_fast > SMA_slow, the Signal = 1 (Buy).
 In quantitative programming, you cannot trade today based on today's closing price, because you do not know the closing price until the market closes. Therefore, the code mathematically forces a 1-day delay:
 $$Position_t=Signal_{t-1}$$
 By shifting the signal vector forward, the backtester simulates real-world execution, ensuring the algorithm's reported ROI is historically accurate and not synthetically inflated.
+
+## Tab 7: Advanced Risk Metrics (Sortino & Calmar)
+While the Sharpe Ratio is the industry standard, it contains a critical mathematical flaw: Standard Deviation ($\sigma$) penalizes *all* volatility. If an asset suddenly explodes upward by 300%, the Sharpe Ratio drops because the asset became "volatile." Professional quants use advanced metrics to isolate only the "bad" volatility.
+
+### 1. The Sortino Ratio (Downside Deviation)
+The Sortino Ratio modifies the Sharpe equation by completely ignoring days where the portfolio made money. It only calculates the variance of the *negative* returns.
+
+**The Equation:**
+$$Sortino=\frac{R_p-R_f}{\sigma_d}$$
+*(Where R_p is the portfolio return, R_f is the risk-free rate, and sigma_d is the Downside Deviation).*
+
+*Intuition:* If an algorithm has a low Sharpe Ratio but a high Sortino Ratio, it tells the quant: *"This asset is highly volatile, but almost all of that volatility is the asset making massive, sudden profits."* 
+
+### 2. Maximum Drawdown (MDD) & The Calmar Ratio
+
+Standard deviation measures daily wiggles. Maximum Drawdown measures the absolute worst-case scenario: the percentage drop from the highest peak the portfolio ever reached to the lowest trough before a new peak is formed.
+
+**The Equation:**
+$$Calmar=\frac{R_p}{MDD}$$
+
+*Intuition:* This is the ultimate test of psychological endurance. You could have an algorithm that returns 40% a year, but if it regularly suffers 60% drawdowns (MDD) along the way, most humans will panic and turn the bot off. The Calmar Ratio measures the return you get relative to the sheer terror of the worst crashes. A Calmar Ratio above 1.0 is generally considered elite.
+
+---
+
+## Tab 8: Natural Language Processing (NLP) & VADER
+Quants no longer rely solely on numeric price data. Human emotion and news drive markets, which requires teaching algorithms to read unstructured text using Natural Language Processing.
+
+### The VADER Lexicon
+Our terminal uses VADER (Valence Aware Dictionary and sEntiment Reasoner). Unlike basic NLP models that just count "good" and "bad" words, VADER understands grammatical intensity. It mathematically weighs capitalization, punctuation, and modifiers. (e.g., "Profits drop" is negative, but "PROFITS PLUMMET!!!" is mathematically scored as severely negative).
+
+
+
+### The Compound Score Normalization
+When VADER reads a headline, it assigns a valence score (*v*) to every word. It sums these scores and normalizes them into a single `Compound Score` constrained between -1 (Extremely Bearish) and +1 (Extremely Bullish).
+
+**The Equation:**
+$$Compound=\frac{\sum v}{\sqrt{\sum v^2+\alpha}}$$
+*(Where v is the valence score of each word, and alpha is a normalization constant, typically set to 15 to ensure the denominator is always slightly larger than the numerator, creating a smooth asymptotic curve between -1 and 1).*
+
+*Intuition:* By looping this equation over dozens of live news headlines and taking the mean, the terminal creates a mathematical proxy for global human sentiment regarding a specific asset.
