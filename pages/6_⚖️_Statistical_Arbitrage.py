@@ -25,9 +25,15 @@ if st.button("Run Cointegration & Z-Score Analysis"):
         # 1. Fetch Data
         df = yf.download([asset_1, asset_2], start="2022-01-01", end=pd.to_datetime("today"), progress=False)['Close']
         
-        if df.empty or len(df.columns) < 2:
-            st.error("Could not fetch data for both assets. Please check the tickers.")
+        # --- DEFENSIVE PROGRAMMING: Check for Invalid Tickers ---
+        if df.empty:
+            st.error("❌ Invalid tickers entered. No data could be fetched.")
+        elif asset_1 not in df.columns or df[asset_1].dropna().empty:
+            st.error(f"❌ Invalid ticker: '{asset_1}' does not exist or has no readable price data.")
+        elif asset_2 not in df.columns or df[asset_2].dropna().empty:
+            st.error(f"❌ Invalid ticker: '{asset_2}' does not exist or has no readable price data.")
         else:
+            # Drop any missing days to ensure both arrays are exactly the same length
             df = df.dropna()
             
             # 2. Cointegration Test (The Rubber Band Test)
@@ -35,7 +41,6 @@ if st.button("Run Cointegration & Z-Score Analysis"):
             score, p_value, _ = coint(df[asset_1], df[asset_2])
             
             # 3. Calculate the Spread and Z-Score
-            # We use Ordinary Least Squares (OLS) regression to find the exact hedge ratio
             X = sm.add_constant(df[asset_2])
             model = sm.OLS(df[asset_1], X).fit()
             hedge_ratio = model.params.iloc[1]
