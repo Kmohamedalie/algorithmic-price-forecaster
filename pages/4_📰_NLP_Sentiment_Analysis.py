@@ -109,9 +109,12 @@ if st.button("Run NLP Scanner"):
             # Convert to DataFrame for a beautiful Streamlit table
             df_display = pd.DataFrame(analyzed_news)
             
-            # Make the 'Link' column clickable in the Streamlit dataframe
-            st.dataframe(
-                df_display[['Date', 'Publisher', 'Sentiment', 'Score', 'Headline']],
-                use_container_width=True,
-                hide_index=True
-            )
+            # DEFENSIVE FIX: Check if the dataframe is empty before trying to display it
+            if not df_display.empty:
+                st.dataframe(
+                    df_display[['Date', 'Publisher', 'Sentiment', 'Score', 'Headline']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.warning("The Yahoo Finance API did not return any readable headlines for this ticker at this time. Try a highly active ticker like 'TSLA', 'NVDA', or 'AAPL'.")
