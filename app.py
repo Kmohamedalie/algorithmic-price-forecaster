@@ -24,38 +24,6 @@ st.set_page_config(page_title="Multi-Asset Quant Terminal", layout="wide")
 st.title("📈 Multi-Asset Quantitative Strategy Terminal")
 
 
-# Bulletproof CSS to swap the sidebar toggle icon across all Streamlit versions
-hamburger_css = """
-<style>
-/* 1. Hide the default Streamlit SVG arrow for ALL possible versions */
-[data-testid="collapsedControl"] svg,
-[data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="stBaseButton-headerNoPadding"] svg,
-[data-testid="baseButton-header"] svg {
-    display: none !important;
-}
-
-/* 2. Insert the universal hamburger icon (☰) */
-[data-testid="collapsedControl"]::before,
-[data-testid="stSidebarCollapsedControl"]::before,
-[data-testid="stBaseButton-headerNoPadding"]::before,
-[data-testid="baseButton-header"]::before {
-    content: "☰";
-    font-size: 24px;
-    font-weight: bold;
-    color: currentColor;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-top: 4px; /* Minor adjustment to perfectly center it */
-}
-</style>
-"""
-
-# Inject the CSS into the app
-st.markdown(hamburger_css, unsafe_allow_html=True)
-
 # Initialize Session States (Kept strictly false for auto-clearing)
 if 'macro_results' not in st.session_state: st.session_state.macro_results = None
 if 'corr_data' not in st.session_state: st.session_state.corr_data = None
