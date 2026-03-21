@@ -18,14 +18,19 @@ with col2:
 if st.button("Fetch Live Snapshot"):
     with st.spinner(f"Pinging Binance matching engine for {symbol} Level 2 data..."):
         
-        # 1. Fetch Live Data from Binance Public API
-        url = f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit={depth_limit}"
-        response = requests.get(url)
+        # 1. Fetch Live Data from Binance Public API (With Geo-Fallback)
+        url_global = f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit={depth_limit}"
+        response = requests.get(url_global)
         
+        # If Global is geo-blocked (e.g., Streamlit Cloud US servers), fallback to US endpoint
         if response.status_code != 200:
-            st.error(f"Failed to fetch data. Ensure '{symbol}' is a valid Binance pair (e.g., ETHUSDT, SOLUSDT).")
+            url_us = f"https://api.binance.us/api/v3/depth?symbol={symbol}&limit={depth_limit}"
+            response = requests.get(url_us)
+
+        if response.status_code != 200:
+            st.error(f"Failed to fetch data from both global and US servers. Ensure '{symbol}' is a valid Binance pair (e.g., ETHUSDT, SOLUSDT) or try again later.")
         else:
-            data = response.json()
+            data = response.json()         
             
             # 2. Parse the Bids (Buyers) and Asks (Sellers)
             # Binance returns lists of strings: ["Price", "Quantity"]
