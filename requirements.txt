@@ -8,3 +8,4 @@ scikit-learn
 fpdf
 scipy
 ta
+nltk
