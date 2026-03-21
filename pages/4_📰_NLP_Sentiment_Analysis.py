@@ -40,12 +40,29 @@ if st.button("Run NLP Scanner"):
             for article in news_data:
                 # Fallbacks for Yahoo Finance's constantly changing API structure
                 title = article.get('title', article.get('content', dict()).get('title', ''))
-                publisher = article.get('publisher', 'Unknown')
                 link = article.get('link', '#')
                 
-                # Timestamp conversion
-                timestamp = article.get('providerPublishTime', 0)
-                date_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M') if timestamp else "Unknown Time"
+                # --- 🕵️‍♂️ UPGRADED PUBLISHER EXTRACTION ---
+                # Check multiple possible dictionary keys Yahoo might be using today
+                publisher = article.get('publisher') or article.get('source')
+                if not publisher and 'provider' in article and isinstance(article['provider'], dict):
+                    publisher = article['provider'].get('displayName')
+                if not publisher:
+                    publisher = "Unknown"
+                
+                # --- ⏱️ UPGRADED TIMESTAMP EXTRACTION ---
+                # Yahoo sometimes uses integers (UNIX), sometimes strings (ISO 8601)
+                raw_time = article.get('providerPublishTime') or article.get('pubDate') or article.get('publishedAt')
+                
+                date_str = "Unknown Time"
+                if raw_time:
+                    try:
+                        if isinstance(raw_time, (int, float)): # It's a UNIX timestamp
+                            date_str = datetime.fromtimestamp(raw_time).strftime('%Y-%m-%d %H:%M')
+                        elif isinstance(raw_time, str): # It's a text string like "2024-03-21T15:30:00Z"
+                            date_str = raw_time[:16].replace("T", " ") 
+                    except Exception:
+                        pass # If all math fails, it defaults back to "Unknown Time"
                 
                 # Only analyze if we successfully grabbed a real string of text
                 if isinstance(title, str) and len(title) > 5:
